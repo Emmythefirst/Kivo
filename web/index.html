@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Kivo — Payment Request</title>
+<style>
+  /*
+   * Colour tokens copied verbatim from src/theme/index.ts so this page
+   * reads as the same product, not a bolted-on afterthought. Kept in
+   * sync manually — there's no shared build step between the RN app and
+   * this standalone page to import the real file from.
+   */
+  :root {
+    --bg: #14171C;
+    --surface: #1C2027;
+    --surfaceRaised: #242932;
+    --border: #2E343E;
+    --text: #F2F4F7;
+    --textDim: #9AA3B0;
+    --textFaint: #646E7D;
+    --owed: #4ADE80;
+    --owing: #F2994A;
+    --danger: #EB5757;
+    --accent: #6C8CFF;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100%;
+  }
+  body {
+    padding: 24px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+    padding-top: calc(24px + env(safe-area-inset-top, 0px));
+    display: flex;
+    justify-content: center;
+  }
+  .app { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 20px; }
+  .wordmark { font-size: 22px; font-weight: 600; letter-spacing: -0.3px; }
+  .card {
+    background: var(--surface);
+    border-radius: 20px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .who { color: var(--textDim); font-size: 15px; }
+  .amount { font-size: 34px; font-weight: 600; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
+  .memo { color: var(--textDim); font-size: 15px; }
+  .detail {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .detail-label { color: var(--textFaint); font-size: 12px; }
+  .detail-value {
+    color: var(--textDim);
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .warn { color: var(--owing); font-size: 12px; }
+  .danger-text { color: var(--danger); font-size: 13px; }
+  .ok-text { color: var(--owed); font-size: 15px; font-weight: 600; }
+
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    border-radius: 12px;
+    border: none;
+    font-size: 16px;
+    font-weight: 600;
+    text-align: center;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn-primary { background: var(--text); color: var(--bg); }
+  .btn-secondary { background: var(--surfaceRaised); color: var(--textDim); }
+  .row { display: flex; gap: 12px; }
+  .row .btn { flex: 1; }
+
+  .wallet-list { display: flex; flex-direction: column; gap: 10px; }
+  .wallet-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--surfaceRaised);
+    border-radius: 12px;
+    border: none;
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+  }
+  .wallet-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--owed); flex-shrink: 0; }
+  .install-link { color: var(--accent); text-decoration: none; font-size: 14px; }
+
+  .connected-strip {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 4px;
+    font-size: 12px;
+  }
+  .connected-strip .label { color: var(--textFaint); }
+  .connected-strip .addr { color: var(--textDim); }
+
+  .fine { color: var(--textFaint); font-size: 12px; text-align: center; }
+  a.explorer-link { color: var(--accent); }
+  [hidden] { display: none !important; }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid rgba(20,23,28,0.3);
+    border-top-color: var(--bg);
+    border-radius: 50%;
+    display: inline-block;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div class="app">
+    <div class="wordmark">Kivo</div>
+
+    <div id="invalid" class="card" hidden>
+      <div class="who">This link isn't a valid request.</div>
+    </div>
+
+    <div id="main" hidden>
+      <div class="card">
+        <div class="who" id="who">Someone is asking you for</div>
+        <div class="amount" id="amount">0.00</div>
+        <div class="memo" id="memo" hidden></div>
+        <div class="detail">
+          <div class="detail-label">Paying to</div>
+          <div class="detail-value" id="toAddress"></div>
+        </div>
+        <div class="warn" id="noUsernameWarn" hidden>
+          This request has no registered username. Check the address is who you expect.
+        </div>
+      </div>
+
+      <div id="statusBanner" style="margin-top:16px" hidden></div>
+
+      <div id="walletSection" style="margin-top:16px"></div>
+
+      <div class="fine" style="margin-top:20px">
+        Kivo never holds your keys. Your own wallet signs everything.
+      </div>
+    </div>
+  </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/buffer/6.0.3/buffer.min.js"></script>
+<script>
+// web3.js's browser bundle below expects a global Buffer (a Node.js
+// built-in the browser doesn't have) to already exist — this polyfill
+// provides it. Without this, PublicKey/PDA derivation throws
+// "Buffer is not defined" before a transaction is even built.
+window.Buffer = buffer.Buffer;
+</script>
+<script src="https://unpkg.com/@solana/web3.js@1.95.4/lib/index.iife.min.js"></script>
+<script>
+// Loaded as a classic global script (not an ES module import from a CDN's
+// auto-converted bundle) deliberately — jsdelivr's `/+esm` conversion of
+// @solana/web3.js has a known failure mode ("fields must be array of
+// Layout instances") from ending up with two incompatible copies of an
+// internal dependency. The plain iife bundle is what Solana's own docs
+// point to for browser-without-a-bundler use, and doesn't have that bug.
+const { PublicKey, Transaction, SystemProgram, TransactionInstruction, Connection, LAMPORTS_PER_SOL } = solanaWeb3;
+
+// Hand-rolled in place of @solana/spl-token (same reasoning as above: one
+// fewer CDN import that can break). Only the two ops this page needs.
+const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+
+function getAssociatedTokenAddress(mint, owner) {
+  const [ata] = PublicKey.findProgramAddressSync(
+    [owner.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+    ASSOCIATED_TOKEN_PROGRAM_ID,
+  );
+  return ata;
+}
+
+function createAssociatedTokenAccountInstruction(payer, ata, owner, mint) {
+  return new TransactionInstruction({
+    programId: ASSOCIATED_TOKEN_PROGRAM_ID,
+    keys: [
+      { pubkey: payer, isSigner: true, isWritable: true },
+      { pubkey: ata, isSigner: false, isWritable: true },
+      { pubkey: owner, isSigner: false, isWritable: false },
+      { pubkey: mint, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data: new Uint8Array(0),
+  });
+}
+
+function createTransferCheckedInstruction(source, mint, destination, owner, amount, decimals) {
+  const data = new Uint8Array(10);
+  data[0] = 12; // SPL Token "TransferChecked" instruction index
+  new DataView(data.buffer).setBigUint64(1, amount, true);
+  data[9] = decimals;
+  return new TransactionInstruction({
+    programId: TOKEN_PROGRAM_ID,
+    keys: [
+      { pubkey: source, isSigner: false, isWritable: true },
+      { pubkey: mint, isSigner: false, isWritable: false },
+      { pubkey: destination, isSigner: false, isWritable: true },
+      { pubkey: owner, isSigner: true, isWritable: false },
+    ],
+    data,
+  });
+}
+
+// Same deployed program as the mobile app — see programs/username-registry.
+// Never redeploy this independently; it must stay the exact same on-chain
+// program id the mobile app uses, or replay protection wouldn't be shared.
+const REGISTRY_PROGRAM_ID = new PublicKey("AaVd1D36aZWEVQVRr6EHsF9fxShv5MXVo2b3AXDaodSF");
+const USDC_MINT = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"); // devnet — swap before mainnet
+const USDC_DECIMALS = 6;
+const REQUEST_TTL_MS = 7 * 24 * 60 * 60 * 1000; // mirrors src/lib/requests.ts — keep in sync
+
+// Public devnet RPC — this page has no build step to inject a private key
+// into, unlike the mobile app's Helius endpoint (see WalletProvider.tsx).
+// Embedding a private RPC key in a public static page's client-side JS
+// would leak it to anyone viewing source, so this deliberately accepts
+// the public endpoint's known congestion as a fallback-page tradeoff.
+const connection = new Connection(solanaWeb3.clusterApiUrl("devnet"), "confirmed");
+
+function utf8Bytes(str) { return new TextEncoder().encode(str); }
+function concatBytes(...arrays) {
+  const total = arrays.reduce((sum, a) => sum + a.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const a of arrays) { out.set(a, offset); offset += a.length; }
+  return out;
+}
+function u32LE(n) {
+  const b = new Uint8Array(4);
+  new DataView(b.buffer).setUint32(0, n, true);
+  return b;
+}
+function i64LE(n) {
+  const b = new Uint8Array(8);
+  new DataView(b.buffer).setBigInt64(0, BigInt(n), true);
+  return b;
+}
+
+// sha256("global:mark_paid").slice(0, 8) — Anchor's instruction
+// discriminator, precomputed the same way as the mobile app's
+// MARK_PAID_DISCRIMINATOR in src/lib/requests.ts.
+const MARK_PAID_DISCRIMINATOR = new Uint8Array([51, 120, 9, 160, 70, 29, 18, 205]);
+
+function deriveRequestMarker(requestId) {
+  const [pda] = PublicKey.findProgramAddressSync(
+    [utf8Bytes("request"), utf8Bytes(requestId)],
+    REGISTRY_PROGRAM_ID,
+  );
+  return pda;
+}
+
+function buildMarkPaidInstruction(payer, request) {
+  const idBytes = utf8Bytes(request.id);
+  const data = concatBytes(
+    MARK_PAID_DISCRIMINATOR,
+    u32LE(idBytes.length),
+    idBytes,
+    i64LE(Math.floor(request.createdAt / 1000)),
+  );
+  return new TransactionInstruction({
+    programId: REGISTRY_PROGRAM_ID,
+    keys: [
+      { pubkey: deriveRequestMarker(request.id), isSigner: false, isWritable: true },
+      { pubkey: payer, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
+
+function buildSolTransfer(from, to, amount) {
+  return new Transaction().add(
+    SystemProgram.transfer({
+      fromPubkey: from,
+      toPubkey: to,
+      lamports: Math.round(amount * LAMPORTS_PER_SOL),
+    }),
+  );
+}
+
+async function buildUsdcTransfer(from, to, amount) {
+  const fromAta = await getAssociatedTokenAddress(USDC_MINT, from);
+  const toAta = await getAssociatedTokenAddress(USDC_MINT, to);
+  const tx = new Transaction();
+  const toAccount = await connection.getAccountInfo(toAta);
+  if (!toAccount) {
+    tx.add(createAssociatedTokenAccountInstruction(from, toAta, to, USDC_MINT));
+  }
+  tx.add(
+    createTransferCheckedInstruction(
+      fromAta,
+      USDC_MINT,
+      toAta,
+      from,
+      BigInt(Math.round(amount * 10 ** USDC_DECIMALS)),
+      USDC_DECIMALS,
+      [],
+      TOKEN_PROGRAM_ID,
+    ),
+  );
+  return tx;
+}
+
+async function isRequestMarkedPaid(requestId) {
+  const account = await connection.getAccountInfo(deriveRequestMarker(requestId));
+  return account !== null;
+}
+
+// --- Link decoding — mirrors decodeLink() in src/lib/requests.ts exactly.
+// Any change to that encoding must be mirrored here too; they aren't
+// shared code since this page has no build step to import it from.
+function decodeLink(url) {
+  try {
+    const parsed = new URL(url);
+    const q = parsed.searchParams;
+    const id = q.get("i");
+    const to = q.get("to");
+    const amount = Number(q.get("a"));
+    const token = q.get("t");
+    const createdAt = Number(q.get("c"));
+    if (!id || !to || !amount || !createdAt) return null;
+    if (token !== "USDC" && token !== "SOL") return null;
+    if (!Number.isFinite(amount) || amount <= 0) return null;
+    return {
+      id,
+      to: new PublicKey(to),
+      toUsername: q.get("u") ?? undefined,
+      amount,
+      token,
+      memo: q.get("m") ?? undefined,
+      createdAt,
+      billId: q.get("b") ?? undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isExpired(request) {
+  return Date.now() - request.createdAt > REQUEST_TTL_MS;
+}
+
+function formatAmount(amount, token) {
+  const n = token === "USDC" ? amount.toFixed(2) : amount.toFixed(4);
+  return token === "USDC" ? `$${n}` : `${n} SOL`;
+}
+
+// --- Wallet detection. Modern Phantom exposes itself at
+// window.phantom.solana; Solflare at window.solflare. Both implement the
+// same de-facto standard: connect(), signAndSendTransaction().
+function detectWallets() {
+  const wallets = [];
+  if (window.phantom?.solana?.isPhantom) {
+    wallets.push({ name: "Phantom", provider: window.phantom.solana });
+  }
+  if (window.solflare?.isSolflare) {
+    wallets.push({ name: "Solflare", provider: window.solflare });
+  }
+  return wallets;
+}
+
+// --- Page wiring
+const request = decodeLink(window.location.href);
+const invalidEl = document.getElementById("invalid");
+const mainEl = document.getElementById("main");
+const statusBanner = document.getElementById("statusBanner");
+const walletSection = document.getElementById("walletSection");
+
+if (!request) {
+  invalidEl.hidden = false;
+} else {
+  mainEl.hidden = false;
+  document.getElementById("who").textContent =
+    (request.toUsername ? `@${request.toUsername}` : "Someone") + " is asking you for";
+  document.getElementById("amount").textContent = formatAmount(request.amount, request.token);
+  if (request.memo) {
+    const memoEl = document.getElementById("memo");
+    memoEl.textContent = request.memo;
+    memoEl.hidden = false;
+  }
+  document.getElementById("toAddress").textContent = request.to.toBase58();
+  if (!request.toUsername) document.getElementById("noUsernameWarn").hidden = false;
+
+  init();
+}
+
+async function init() {
+  if (isExpired(request)) {
+    showBanner("warn", "This request expired. Ask for a new one.");
+    return;
+  }
+
+  const paidAlready = await isRequestMarkedPaid(request.id).catch(() => false);
+  if (paidAlready) {
+    showBanner("ok", "This request was already paid.");
+    return;
+  }
+
+  renderWalletChooser();
+}
+
+function showBanner(kind, text) {
+  statusBanner.hidden = false;
+  statusBanner.className = kind === "ok" ? "ok-text" : kind === "danger" ? "danger-text" : "warn";
+  statusBanner.textContent = text;
+}
+
+function renderWalletChooser() {
+  const wallets = detectWallets();
+  walletSection.innerHTML = "";
+
+  if (wallets.length === 0) {
+    const box = document.createElement("div");
+    box.className = "card";
+    box.innerHTML = `
+      <div class="who">No Solana wallet found in this browser.</div>
+      <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
+        <a class="install-link" href="https://phantom.app/download" target="_blank" rel="noopener">Get Phantom →</a>
+        <a class="install-link" href="https://www.solflare.com/download/" target="_blank" rel="noopener">Get Solflare →</a>
+      </div>`;
+    walletSection.appendChild(box);
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "wallet-list";
+  for (const w of wallets) {
+    const btn = document.createElement("button");
+    btn.className = "wallet-btn";
+    btn.innerHTML = `<span class="wallet-dot"></span> Connect ${w.name}`;
+    btn.onclick = () => connectWallet(w);
+    list.appendChild(btn);
+  }
+  walletSection.appendChild(list);
+}
+
+async function connectWallet(wallet) {
+  try {
+    const result = await wallet.provider.connect();
+    const payer = new PublicKey(result.publicKey.toString());
+    renderPayScreen(wallet.provider, payer);
+  } catch {
+    showBanner("danger", "Connection cancelled.");
+  }
+}
+
+function renderPayScreen(provider, payer) {
+  walletSection.innerHTML = "";
+
+  const strip = document.createElement("div");
+  strip.className = "connected-strip";
+  const addr = payer.toBase58();
+  strip.innerHTML = `<span class="label">Paying from</span><span class="addr">${addr.slice(0, 4)}…${addr.slice(-4)}</span>`;
+  walletSection.appendChild(strip);
+
+  const actions = document.createElement("div");
+  actions.className = "row";
+  actions.style.marginTop = "12px";
+  actions.innerHTML = `
+    <button class="btn btn-secondary" id="declineBtn">Decline</button>
+    <button class="btn btn-primary" id="payBtn">Pay</button>`;
+  walletSection.appendChild(actions);
+
+  document.getElementById("declineBtn").onclick = () => {
+    walletSection.innerHTML = "";
+    showBanner("warn", "Declined. You can close this page.");
+  };
+  document.getElementById("payBtn").onclick = () => pay(provider, payer);
+}
+
+async function pay(provider, payer) {
+  const payBtn = document.getElementById("payBtn");
+  payBtn.disabled = true;
+  payBtn.innerHTML = '<span class="spinner"></span>';
+
+  try {
+    const tx =
+      request.token === "SOL"
+        ? buildSolTransfer(payer, request.to, request.amount)
+        : await buildUsdcTransfer(payer, request.to, request.amount);
+
+    // Same transaction as the transfer, not a separate one — see
+    // mark_paid() in the Anchor program for why this is the actual
+    // replay-protection guarantee, not just a nicety.
+    tx.add(buildMarkPaidInstruction(payer, request));
+
+    // Fetched right before signing, not earlier — wallet interaction can
+    // easily take longer than a blockhash stays valid (~60-90s). See the
+    // mobile app's wallet.ts / progress.md for the live-reproduced bug
+    // this specifically avoids.
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = payer;
+
+    const result = await provider.signAndSendTransaction(tx);
+    const signature = typeof result === "string" ? result : result.signature;
+
+    // A signature alone doesn't mean the transaction landed — if the
+    // wallet is pointed at a different network than this page's devnet
+    // connection, signAndSendTransaction can still resolve with a
+    // signature even though nothing was actually confirmed here. Wait for
+    // real confirmation before claiming success.
+    const confirmation = await connection.confirmTransaction(
+      { signature, blockhash, lastValidBlockHeight },
+      "confirmed",
+    );
+    if (confirmation.value.err) {
+      throw new Error(`Transaction failed on-chain: ${JSON.stringify(confirmation.value.err)}`);
+    }
+
+    walletSection.innerHTML = "";
+    showBanner("ok", "Paid. It's confirmed on-chain.");
+    const link = document.createElement("a");
+    link.className = "explorer-link fine";
+    link.href = `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = "View on Solana Explorer →";
+    link.style.display = "block";
+    link.style.marginTop = "8px";
+    statusBanner.appendChild(link);
+  } catch (e) {
+    const raw = e?.message ?? String(e);
+    payBtn.disabled = false;
+    payBtn.textContent = "Pay";
+    showBanner(
+      "danger",
+      /insufficient/i.test(raw)
+        ? "Not enough balance to cover this and the network fee."
+        : /RequestExpired|This request has expired/i.test(raw)
+          ? "This request expired. Ask for a new one."
+          : /already in use/i.test(raw)
+            ? "This request was already paid. Nothing was sent."
+            : /block height exceeded/i.test(raw)
+              ? "This never confirmed on Devnet. Check your wallet extension is set to Devnet (not Mainnet) and try again."
+              : `The wallet rejected or cancelled this. Nothing was sent. (${raw})`,
+    );
+  }
+}
+</script>
+</body>
+</html>

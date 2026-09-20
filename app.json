@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "Kivo",
+    "slug": "kivo",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "kivo",
+    "userInterfaceStyle": "dark",
+    "platforms": [
+      "android"
+    ],
+    "android": {
+      "package": "com.kivo.app",
+      "versionCode": 1,
+      "permissions": [
+        "INTERNET",
+        "POST_NOTIFICATIONS"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "kivo.app",
+              "pathPrefix": "/r"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 24,
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "kotlinVersion": "1.9.25"
+          }
+        }
+      ],
+      "expo-asset"
+    ]
+  }
+}

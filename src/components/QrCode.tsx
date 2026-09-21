@@ -65,7 +65,7 @@ export default function QrCode({ value, size = 220 }: Props) {
 const s = StyleSheet.create({
   quietZone: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },

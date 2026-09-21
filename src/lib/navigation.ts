@@ -20,8 +20,9 @@ export type RootStackParamList = {
   Connect: undefined;
   Home: undefined;
   Request: { link: string };
-  New: undefined;
+  New: { mode?: 'request' | 'pay' | 'split' } | undefined;
   ShareRequest: { link: string; requestedFromLabel?: string };
   ClaimUsername: undefined;
   ShareBill: { billId: string };
+  Activity: undefined;
 };

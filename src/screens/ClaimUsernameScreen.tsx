@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useWallet } from '../lib/WalletProvider';
 import { signAndSend } from '../lib/wallet';
 import {
@@ -73,48 +74,57 @@ export default function ClaimUsernameScreen({ navigation }: any) {
   }
 
   const statusText: Record<Availability, string | null> = {
-    idle: null,
+    idle: 'Pick something short and memorable',
     checking: 'Checking availability…',
-    available: 'Available',
-    taken: 'Already claimed by someone else',
+    available: `@${username} is available`,
+    taken: 'That username is taken — try another',
     invalid: '3-20 characters: letters, numbers, underscore',
   };
   const statusColor: Record<Availability, string> = {
     idle: color.textFaint,
     checking: color.textFaint,
-    available: color.owed,
+    available: color.success,
     taken: color.danger,
     invalid: color.danger,
   };
+  const borderColor: Record<Availability, string> = {
+    idle: color.borderStrong,
+    checking: color.borderStrong,
+    available: 'rgba(154,217,122,0.4)',
+    taken: 'rgba(255,107,94,0.4)',
+    invalid: 'rgba(255,107,94,0.4)',
+  };
 
   return (
-    <View style={s.root}>
+    <SafeAreaView style={s.root} edges={['top', 'bottom']}>
+      <Pressable style={s.backBtn} onPress={() => navigation.navigate('Home')}>
+        <Text style={s.backBtnText}>‹</Text>
+      </Pressable>
+
       <View style={s.body}>
-        <Text style={s.title}>Claim a username</Text>
+        <Text style={s.title}>Claim your username</Text>
         <Text style={s.pitch}>
-          Let people send you money by name instead of pasting your wallet
-          address. Optional — you can always do this later.
+          Lets people pay you by name instead of a wallet address. Fully
+          on-chain — no one can take it from you.
         </Text>
 
         <View style={s.field}>
-          <View style={s.inputRow}>
+          <View style={[s.inputRow, { borderColor: borderColor[availability] }]}>
             <Text style={s.at}>@</Text>
             <TextInput
               style={s.input}
               value={username}
               onChangeText={setUsername}
-              placeholder="username"
+              placeholder="yourname"
               placeholderTextColor={color.textFaint}
               autoCapitalize="none"
               autoCorrect={false}
               maxLength={20}
             />
           </View>
-          {statusText[availability] ? (
-            <Text style={[s.status, { color: statusColor[availability] }]}>
-              {statusText[availability]}
-            </Text>
-          ) : null}
+          <Text style={[s.status, { color: statusColor[availability] }]}>
+            {statusText[availability]}
+          </Text>
         </View>
 
         {error ? <Text style={s.error}>{error}</Text> : null}
@@ -124,8 +134,7 @@ export default function ClaimUsernameScreen({ navigation }: any) {
         <Pressable
           style={[
             s.btn,
-            s.primary,
-            (availability !== 'available' || claiming) && s.btnDisabled,
+            availability === 'available' ? s.btnActive : s.btnDisabled,
           ]}
           onPress={handleClaim}
           disabled={availability !== 'available' || claiming}
@@ -133,7 +142,14 @@ export default function ClaimUsernameScreen({ navigation }: any) {
           {claiming ? (
             <ActivityIndicator color={color.bg} />
           ) : (
-            <Text style={s.primaryText}>Claim username</Text>
+            <Text
+              style={[
+                s.btnText,
+                availability === 'available' ? s.btnTextActive : s.btnTextDisabled,
+              ]}
+            >
+              Claim @{username || 'username'}
+            </Text>
           )}
         </Pressable>
         <Pressable
@@ -144,28 +160,32 @@ export default function ClaimUsernameScreen({ navigation }: any) {
           <Text style={s.skipText}>Skip for now</Text>
         </Pressable>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: color.bg, padding: space.lg },
-  body: { flex: 1, paddingTop: space.xl, gap: space.lg },
-  title: { ...type.title, color: color.text },
-  pitch: { ...type.body, color: color.textDim },
+  root: { flex: 1, backgroundColor: color.bg, padding: space.xl },
+  backBtn: { width: 32, marginBottom: space.sm },
+  backBtnText: { fontSize: 20, color: color.textFaint },
 
-  field: { gap: space.xs },
+  body: { flex: 1, gap: space.lg, paddingTop: space.lg },
+  title: { ...type.titleLg, color: color.text },
+  pitch: { ...type.body, color: color.textFainter, lineHeight: 21 },
+
+  field: { gap: space.sm, marginTop: space.sm },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: color.surface,
-    borderRadius: radius.md,
-    paddingHorizontal: space.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    paddingHorizontal: space.lg,
   },
-  at: { ...type.body, color: color.textFaint },
+  at: { ...type.body, color: color.textFaint, marginRight: 2 },
   input: {
     flex: 1,
-    paddingVertical: space.md,
+    paddingVertical: space.lg - 2,
     paddingHorizontal: space.xs,
     color: color.text,
     ...type.body,
@@ -174,14 +194,12 @@ const s = StyleSheet.create({
   error: { ...type.caption, color: color.danger },
 
   footer: { gap: space.sm, paddingBottom: space.md },
-  btn: {
-    paddingVertical: space.lg,
-    borderRadius: radius.md,
-    alignItems: 'center',
-  },
-  btnDisabled: { opacity: 0.5 },
-  primary: { backgroundColor: color.text },
-  primaryText: { ...type.label, fontSize: 16, color: color.bg },
+  btn: { paddingVertical: space.lg, borderRadius: radius.lg, alignItems: 'center' },
+  btnActive: { backgroundColor: color.owed },
+  btnDisabled: { backgroundColor: color.surfaceRaised },
+  btnText: { ...type.labelLg },
+  btnTextActive: { color: color.bg },
+  btnTextDisabled: { color: color.textFaint },
   skip: { alignItems: 'center', paddingVertical: space.md },
-  skipText: { ...type.label, color: color.textFaint },
+  skipText: { ...type.label, color: color.textFainter },
 });

@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, Share, Alert } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Share } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import { useWallet } from '../lib/WalletProvider';
+import { useToast } from '../lib/ToastProvider';
 import { decodeLink, isRequestMarkedPaid } from '../lib/requests';
 import QrCode from '../components/QrCode';
 import { color, space, radius, type, formatAmount } from '../theme';
@@ -14,6 +16,7 @@ export default function ShareRequestScreen({ route, navigation }: any) {
   const request = useMemo(() => decodeLink(link), [link]);
   const { connection } = useWallet();
   const [paid, setPaid] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     if (!request) return;
@@ -22,9 +25,9 @@ export default function ShareRequestScreen({ route, navigation }: any) {
 
   if (!request) {
     return (
-      <View style={s.root}>
+      <SafeAreaView style={s.root} edges={['top', 'bottom']}>
         <Text style={s.label}>This link isn't a valid request.</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -45,107 +48,111 @@ export default function ShareRequestScreen({ route, navigation }: any) {
 
   async function copy() {
     await Clipboard.setStringAsync(link);
-    Alert.alert('Copied', 'Link copied to clipboard.');
+    toast('Link copied');
   }
 
+  const subtitle = request.memo
+    ? request.memo
+    : requestedFromLabel
+      ? `Requesting from ${requestedFromLabel}`
+      : 'Request created';
+
   return (
-    <View style={s.root}>
+    <SafeAreaView style={s.root} edges={['top', 'bottom']}>
+      <Text style={s.title}>Ready to share</Text>
+
       <View style={s.card}>
-        <View style={s.headerRow}>
-          <Text style={s.label}>
-            {requestedFromLabel
-              ? `Requesting from ${requestedFromLabel}`
-              : 'Request created'}
-          </Text>
+        <View style={s.amountRow}>
+          <Text style={s.amount}>{formatAmount(request.amount, request.token)}</Text>
           {paid ? (
             <View style={s.paidBadge}>
               <Text style={s.paidBadgeText}>Paid</Text>
             </View>
           ) : null}
         </View>
-        <Text style={s.amount}>
-          {formatAmount(request.amount, request.token)}
-        </Text>
-        {request.memo ? <Text style={s.memo}>{request.memo}</Text> : null}
-
-        <View style={s.linkBox}>
-          <Text style={s.linkLabel}>Anyone with this link can pay it</Text>
-          <Text style={s.link} numberOfLines={2}>
-            {link}
-          </Text>
-        </View>
+        <Text style={s.subtitle}>{subtitle}</Text>
       </View>
 
-      <View style={s.qrRow}>
+      <View style={s.qrBlock}>
         <QrCode value={link} size={180} />
+        <Text style={s.qrCaption}>Scan to pay</Text>
       </View>
 
-      <View style={s.actions}>
-        <Pressable style={[s.btn, s.secondary]} onPress={copy}>
-          <Text style={s.secondaryText}>Copy link</Text>
-        </Pressable>
-        <Pressable style={[s.btn, s.primary]} onPress={share}>
-          <Text style={s.primaryText}>Share</Text>
+      <View style={s.linkRow}>
+        <Text style={s.link} numberOfLines={1}>
+          {link}
+        </Text>
+        <Pressable style={s.copyBtn} onPress={copy}>
+          <Text style={s.copyBtnText}>Copy</Text>
         </Pressable>
       </View>
 
-      <Pressable
-        style={s.done}
-        onPress={() => navigation.navigate('Home')}
-      >
+      <Pressable style={s.shareBtn} onPress={share}>
+        <Text style={s.shareBtnText}>Share link</Text>
+      </Pressable>
+
+      <Pressable style={s.done} onPress={() => navigation.navigate('Home')}>
         <Text style={s.doneText}>Done</Text>
       </Pressable>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: color.bg, padding: space.lg, gap: space.lg },
+  root: { flex: 1, backgroundColor: color.bg, padding: space.xl, paddingTop: space.xl + 4 },
+  title: { ...type.title, color: color.text, textAlign: 'center' },
+  label: { ...type.body, color: color.textDim },
+
   card: {
-    backgroundColor: color.surface,
-    borderRadius: radius.lg,
+    marginTop: space.lg,
+    backgroundColor: color.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: color.border,
+    borderRadius: radius.xl,
     padding: space.xl,
-    gap: space.sm,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  label: { ...type.body, color: color.textDim },
+  amountRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  amount: { ...type.amountMd, color: color.owed },
+  subtitle: { ...type.caption, color: color.textFainter, marginTop: space.xs + 2 },
   paidBadge: {
-    backgroundColor: color.owed,
+    backgroundColor: 'rgba(198,242,78,0.12)',
     paddingHorizontal: space.sm,
     paddingVertical: 2,
     borderRadius: radius.pill,
   },
-  paidBadgeText: { ...type.caption, color: color.bg, fontWeight: '600' },
-  amount: { ...type.amount, color: color.text },
-  memo: { ...type.body, color: color.textDim },
-  linkBox: {
-    marginTop: space.md,
-    paddingTop: space.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: color.border,
-    gap: 2,
-  },
-  linkLabel: { ...type.caption, color: color.textFaint },
-  link: { ...type.caption, color: color.accent },
+  paidBadgeText: { ...type.captionBold, color: color.owed },
 
-  qrRow: { alignItems: 'center' },
+  qrBlock: { alignItems: 'center', marginTop: space.lg },
+  qrCaption: { ...type.caption, color: color.textFaint, marginTop: space.sm },
 
-  actions: { flexDirection: 'row', gap: space.md },
-  btn: {
-    flex: 1,
-    paddingVertical: space.lg,
+  linkRow: {
+    marginTop: space.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    backgroundColor: color.surface,
     borderRadius: radius.md,
+    padding: space.md,
+  },
+  link: { flex: 1, fontFamily: 'monospace', fontSize: 12, color: '#C9C2C6' },
+  copyBtn: {
+    backgroundColor: color.surfaceRaised,
+    borderRadius: radius.sm,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm - 2,
+  },
+  copyBtnText: { ...type.captionBold, fontSize: 12, color: color.text },
+
+  shareBtn: {
+    marginTop: space.md,
+    paddingVertical: space.lg,
+    borderRadius: radius.lg,
+    backgroundColor: color.owed,
     alignItems: 'center',
   },
-  secondary: { backgroundColor: color.surfaceRaised },
-  secondaryText: { ...type.label, fontSize: 16, color: color.textDim },
-  primary: { backgroundColor: color.text },
-  primaryText: { ...type.label, fontSize: 16, color: color.bg },
+  shareBtnText: { ...type.labelLg, color: color.bg },
 
-  done: { alignItems: 'center', paddingVertical: space.md },
-  doneText: { ...type.label, color: color.textFaint },
+  done: { alignItems: 'center', paddingVertical: space.md + 2 },
+  doneText: { ...type.label, color: color.textFainter },
 });

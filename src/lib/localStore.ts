@@ -12,6 +12,7 @@ import type { PaymentRequest } from './requests';
  */
 
 const SENT_REQUESTS_KEY = 'kivo.sentRequests';
+const SENT_PAYMENTS_KEY = 'kivo.sentPayments';
 const RECENT_CONTACTS_KEY = 'kivo.recentContacts';
 const BILL_META_KEY = 'kivo.billMeta';
 const MAX_RECENT_CONTACTS = 10;
@@ -41,6 +42,23 @@ export type RecentContact = {
   address: string; // base58
   username?: string;
   lastUsedAt: number;
+};
+
+/**
+ * A payment this device has made — the outgoing-money counterpart to
+ * SentRequest. Nothing recorded this before; it exists purely so the
+ * Activity feed can show a real, on-chain-confirmed history of money you
+ * sent, not just money you've asked for. Written once, right after a
+ * payment's transaction confirms — never speculatively before that.
+ */
+export type SentPayment = {
+  to: string; // base58
+  toUsername?: string;
+  amount: number;
+  token: 'USDC' | 'SOL';
+  memo?: string;
+  createdAt: number;
+  signature: string;
 };
 
 async function readJson<T>(key: string, fallback: T): Promise<T> {
@@ -88,6 +106,19 @@ export async function saveBillMeta(
 export async function getBillMeta(billId: string): Promise<BillMeta | null> {
   const all = await readJson<Record<string, BillMeta>>(BILL_META_KEY, {});
   return all[billId] ?? null;
+}
+
+export async function getSentPayments(): Promise<SentPayment[]> {
+  return readJson<SentPayment[]>(SENT_PAYMENTS_KEY, []);
+}
+
+export async function addSentPayment(payment: SentPayment): Promise<void> {
+  const existing = await readJson<SentPayment[]>(SENT_PAYMENTS_KEY, []);
+  // Newest first — matches addSentRequest's ordering.
+  await AsyncStorage.setItem(
+    SENT_PAYMENTS_KEY,
+    JSON.stringify([payment, ...existing]),
+  );
 }
 
 export async function getRecentContacts(): Promise<RecentContact[]> {

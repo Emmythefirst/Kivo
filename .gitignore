@@ -1,6 +1,9 @@
 # Secrets — never commit
 .env
 .env.local
+*.keystore
+*.jks
+keystore.properties
 
 # Dependencies
 node_modules/

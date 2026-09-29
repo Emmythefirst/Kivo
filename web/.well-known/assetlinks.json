@@ -5,7 +5,7 @@
       "namespace": "android_app",
       "package_name": "com.kivo.app",
       "sha256_cert_fingerprints": [
-        "REPLACE_WITH_YOUR_RELEASE_KEYSTORE_SHA256_FINGERPRINT"
+        "F9:2A:BB:0B:D5:B6:68:26:BD:65:5C:C9:88:52:95:F7:D7:22:50:BE:BB:69:F1:32:1D:41:DB:9B:47:18:8A:34"
       ]
     }
   }

@@ -23,7 +23,7 @@
           "data": [
             {
               "scheme": "https",
-              "host": "kivo.app",
+              "host": "web-rouge-one-97.vercel.app",
               "pathPrefix": "/r"
             }
           ],

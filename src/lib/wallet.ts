@@ -7,7 +7,7 @@ import { toUint8Array } from 'js-base64';
 // it renders inside Phantom/Solflare's own UI, not ours.
 const APP_IDENTITY = {
   name: 'Kivo',
-  uri: 'https://kivo.app',
+  uri: 'https://web-rouge-one-97.vercel.app',
   icon: 'favicon.ico', // resolved relative to uri
 };
 

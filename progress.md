@@ -2100,10 +2100,11 @@ Picking up exactly where Session 1 left off: `web/index.html` had passed every s
 
 **Phase 5 is now genuinely, live-verified complete** — a real payment through a real browser wallet extension, via the standalone web fallback page, with the exact same on-chain replay-protection guarantee (`mark_paid`, same deployed program) as the mobile app. This closes the last remaining open item from the original brief's 5 phases; all five are now built *and* live-tested, not just built.
 
-**What's left, not phase work — hackathon submission logistics:**
-- If a `kivo.app`-style domain ever gets registered, wiring up real `assetlinks.json` (still has the placeholder fingerprint — needs a release keystore, which doesn't exist yet, only debug builds so far) for actual Android App Links auto-verification. Not blocking a demo either way — without it, tapping a link just opens a browser instead of the app directly, which is itself the working fallback path.
-- A quick sanity pass on the post-rename `com.kivo.app` install was flagged as worth doing (Session 1) but never explicitly circled back to: reconnect wallet, re-claim/re-check username, re-verify Home screen data on the fresh install (local storage reset when the package id changed). Still outstanding, still not blocking.
-- The actual hackathon submission artifacts: release APK build (only debug builds exist so far), demo video, and pitch deck. None of this is code work; all of it is still ahead of the Oct 9, 2026 deadline.
+**What's left, not phase work — hackathon submission logistics (updated Session 4):**
+- ~~Real `assetlinks.json`~~ — **done, Session 4.** Repointed to the live Vercel domain, real keystore fingerprint published and verified live.
+- ~~Release APK~~ — **done, Session 4** (`android/app/build/outputs/apk/release/app-release.apk`), signature independently verified against the published fingerprint. Not yet installed/sanity-tested on-device.
+- A quick sanity pass on a fresh install is still outstanding — now doubly relevant, since the new release APK's different signing key resets local storage the same way the earlier package rename did: reconnect wallet, re-claim/re-check username, re-verify Home/Activity data.
+- Demo video and pitch deck — not started. Still ahead of the Oct 9, 2026 deadline.
 - Devnet-only items to swap before any real deployment: `USDC_MINT` in both `transfer.ts` and `web/index.html` point at the devnet USDC mint, not the real mainnet one.
 
 ### 2026-09-21 — Session 3: pushed to GitHub, deployed the web fallback page to Vercel
@@ -2169,5 +2170,31 @@ User's ask, after seeing the redesigned Home screen live: rename the "Requests" 
 **`HomeScreen.tsx`**: section relabeled "ACTIVITY", now built from `loadActivity()`, capped at **5** most-recent items with a "See all N →" row beneath once there are more than that. Pending-total card excludes payments (money already sent isn't "pending to you").
 
 **New `src/screens/ActivityScreen.tsx`**: full history behind "See all", grouped by month (`monthLabel()` in `activity.ts`, e.g. "September 2026") via React Native's built-in `SectionList` — no new dependency, sections fall out newest-to-oldest for free since `loadActivity()`'s output is already sorted and `Map` preserves insertion order. Added `Activity: undefined` to `RootStackParamList` and registered the screen in `App.tsx`.
+
+### 2026-09-29 — Session 4: real release keystore, live assetlinks.json, first signed release APK
+
+Picked up the last "what's left" item from Session 3: generating a real signing keystore (needed for the release APK submission requirement either way) and wiring up real App Links via `assetlinks.json`.
+
+**Domain reality check before touching the keystore at all:** a correct fingerprint in `assetlinks.json` isn't sufficient on its own — Android verifies that file at the exact host the app's intent filter declares, which was still `kivo.app`, a domain nobody owns. Flagged this to the user as a real fork (repoint to the already-live Vercel URL vs. actually buying `kivo.app` vs. skipping App Links for now) rather than silently picking one. User chose to repoint.
+
+**Repointed the app's domain identity from `kivo.app` to the real, live `https://web-rouge-one-97.vercel.app`:**
+- `src/lib/requests.ts`'s `LINK_HOST`
+- `app.json`'s intent filter `host`
+- `src/lib/wallet.ts`'s `APP_IDENTITY.uri` (shown inside the wallet's approval dialog)
+- Added `web/vercel.json` with a rewrite (`/r` → `/index.html`) — the Vercel deployment only ever served `index.html` at the root; without this, `LINK_HOST + '/r?...'` links (the app's own convention, matching the intent filter's `pathPrefix`) would 404 on the web fallback. Redeployed and verified live: `curl` against `.../r?i=test123` returns the real page, not a 404.
+
+**Generated the real release keystore** (`kivo-release.keystore`, alias `kivo`) — done by the user in their own terminal, deliberately, so the password they set is never typed into anything I could see or that ends up in a transcript. Stored at the **project root**, not inside `android/`, specifically so it survives even if `expo prebuild --clean` is ever run again (that command wipes and regenerates the entire `android/` folder from scratch — a real risk for anything stored inside it, and this key is unrecoverable if lost). Added `*.keystore`/`*.jks`/`keystore.properties` to the root `.gitignore` before any of this (on top of `android/` already being fully gitignored).
+
+**Extracted the SHA-256 fingerprint** (`keytool -list -v`, run by the user for the same password-privacy reason) and published it into `web/.well-known/assetlinks.json`, replacing the placeholder. Redeployed and verified live via `curl` — the real fingerprint is now publicly served at the correct URL.
+
+**Wired `android/app/build.gradle` to actually use the release keystore:** added a `release` signing config that reads from a new `android/keystore.properties` (gitignored, created as a template with placeholder passwords — the user filled in the real values themselves by editing the file directly, again keeping the password out of the conversation). Falls back to the debug signing config if the properties file is ever missing, so a build never hard-fails just because the file isn't there. `storeFile` path is `../kivo-release.keystore` — one level up from `android/`, matching where the key actually lives.
+
+**Built the first real signed release APK** (`android/app/build/outputs/apk/release/app-release.apk`, ~65MB). Hit one real environment snag along the way, unrelated to the signing setup itself: the first two build attempts (run via this session's own tooling) failed trying to download the release-variant `react-android`/`hermes-android` `.aar` files from Maven Central — first a DNS resolution failure, then a read timeout on retry. These are large files (tens of MB) being fetched for the first time (release-variant AARs had never been downloaded before in this project; debug builds always succeeded because those were already cached from every prior session). Same pattern as earlier Vercel CLI friction this session — had the user run the build in their own terminal instead, where it completed successfully in ~15 minutes.
+
+**Verified the signature independently, not just trusted a successful build:** `keytool -printcert -jarfile` failed with "Not a signed jar file" — expected, not a problem, since modern Android builds use APK Signature Scheme v2/v3, which is a different mechanism than the JAR-signing format `keytool` understands. Used `apksigner verify --print-certs` (from `$ANDROID_HOME/build-tools/35.0.0/`) instead — confirmed the APK's actual signing certificate SHA-256 digest matches the fingerprint published in `assetlinks.json` exactly (same 32 bytes, just without colons). This is a genuinely-signed release build, not a silent fallback to the debug key.
+
+**Known, disclosed limitation, not fixed this session:** this release APK still bundles `expo-dev-client`/`expo-dev-launcher`/`expo-dev-menu` — local (non-EAS) Expo builds don't automatically strip dev-client tooling based on build variant the way an EAS "production" build profile would; that distinction is normally handled by `eas.json` build profiles, which this project has never used (always plain `expo run:android`/`gradlew` throughout). The APK still runs standalone correctly with its own embedded JS bundle (confirmed via the `createBundleReleaseJsAndAssets` task in the build log) — it just carries some extra unused dev tooling weight. Not worth restructuring under the current deadline pressure; flagged here in case a smaller/cleaner build ever becomes a priority.
+
+**Not yet done:** installing this specific release APK on-device (requires uninstalling the existing debug-signed `com.kivo.app` first, since they now have different signing certificates) and the sanity pass this would double as — reconnect wallet, re-claim username, re-verify Home/Activity — local storage resets again on this fresh install, same as the earlier package-rename event.
 
 All JS-only — no new native dependencies, no rebuild required, `npx tsc --noEmit` clean.

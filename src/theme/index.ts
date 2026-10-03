@@ -31,12 +31,15 @@ export const color = {
   accent: '#9E8CFC',
 } as const;
 
-export const AVATAR_COLORS = [
-  '#C6F24E',
-  '#9E8CFC',
-  '#FF9C6B',
-  '#5FD0C0',
-  '#FFD166',
+// Two-tone avatar palette (2026-10-03 design update) — muted dark
+// background + a matching light accent text color, replacing the earlier
+// flat-color/black-text avatars. Matches the shared design's PALETTE.
+export const AVATAR_PALETTE = [
+  { bg: '#2A2640', fg: '#C9C2FA' },
+  { bg: '#3A2A22', fg: '#FFB48F' },
+  { bg: '#1E3330', fg: '#7FDCCD' },
+  { bg: '#38321F', fg: '#F2D58A' },
+  { bg: '#262A33', fg: '#B8C0D0' },
 ] as const;
 
 export const space = {
@@ -130,9 +133,9 @@ function hashString(s: string): number {
   return Math.abs(h);
 }
 
-/** Deterministic avatar color per name/id — same input always maps to the same color. */
-export function avatarColor(seed: string): string {
-  return AVATAR_COLORS[hashString(seed) % AVATAR_COLORS.length];
+/** Deterministic two-tone avatar colors per name/id — same input always maps to the same pair. */
+export function avatarColor(seed: string): { bg: string; fg: string } {
+  return AVATAR_PALETTE[hashString(seed) % AVATAR_PALETTE.length];
 }
 
 /** Coarse relative-time label ("2h ago", "3d ago") for request timestamps. */

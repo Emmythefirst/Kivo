@@ -18,7 +18,7 @@ import {
 } from '../lib/usernames';
 import { color, space, radius, type } from '../theme';
 
-type Availability = 'idle' | 'checking' | 'available' | 'taken' | 'invalid';
+type Availability = 'idle' | 'short' | 'checking' | 'available' | 'taken' | 'invalid';
 
 export default function ClaimUsernameScreen({ navigation }: any) {
   const { session, connection } = useWallet();
@@ -33,6 +33,10 @@ export default function ClaimUsernameScreen({ navigation }: any) {
     const trimmed = username.trim();
     if (!trimmed) {
       setAvailability('idle');
+      return;
+    }
+    if (trimmed.length < 3 && /^[a-z0-9_]*$/i.test(trimmed)) {
+      setAvailability('short');
       return;
     }
     if (!isValidUsername(trimmed)) {
@@ -74,14 +78,16 @@ export default function ClaimUsernameScreen({ navigation }: any) {
   }
 
   const statusText: Record<Availability, string | null> = {
-    idle: 'Pick something short and memorable',
+    idle: '3–20 characters. Letters, numbers, _ and .',
+    short: 'Keep going — at least 3 characters',
     checking: 'Checking availability…',
     available: `@${username} is available`,
-    taken: 'That username is taken — try another',
+    taken: `@${username} is taken`,
     invalid: '3-20 characters: letters, numbers, underscore',
   };
   const statusColor: Record<Availability, string> = {
     idle: color.textFaint,
+    short: color.textFaint,
     checking: color.textFaint,
     available: color.success,
     taken: color.danger,
@@ -89,6 +95,7 @@ export default function ClaimUsernameScreen({ navigation }: any) {
   };
   const borderColor: Record<Availability, string> = {
     idle: color.borderStrong,
+    short: color.borderStrong,
     checking: color.borderStrong,
     available: 'rgba(154,217,122,0.4)',
     taken: 'rgba(255,107,94,0.4)',
@@ -104,8 +111,8 @@ export default function ClaimUsernameScreen({ navigation }: any) {
       <View style={s.body}>
         <Text style={s.title}>Claim your username</Text>
         <Text style={s.pitch}>
-          Lets people pay you by name instead of a wallet address. Fully
-          on-chain — no one can take it from you.
+          People can pay you by name instead of a wallet address. Stored
+          on-chain and tied to your wallet.
         </Text>
 
         <View style={s.field}>

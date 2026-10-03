@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Linking } from 'react-native';
 import Avatar from './Avatar';
 import { encodeLink } from '../lib/requests';
 import type { ActivityItem } from '../lib/activity';
@@ -72,10 +72,18 @@ export default function ActivityRow({
     );
   }
 
-  // Payment — already settled the moment it was recorded, nothing to open.
+  // Payment — no separate detail screen (nothing to share/copy the way a
+  // request has), but tapping through to the transaction on Solana
+  // Explorer is a real detail worth surfacing, since the signature is
+  // already on hand.
   const name = item.toUsername ?? `${item.to.slice(0, 4)}…${item.to.slice(-4)}`;
   return (
-    <View style={s.row}>
+    <Pressable
+      style={s.row}
+      onPress={() =>
+        Linking.openURL(`https://explorer.solana.com/tx/${item.signature}?cluster=devnet`)
+      }
+    >
       <Avatar name={item.toUsername ?? item.to} colorSeed={item.to} />
       <View style={s.rowMain}>
         <Text style={s.rowName}>Paid {name}</Text>
@@ -87,7 +95,7 @@ export default function ActivityRow({
         <Text style={s.rowAmount}>{formatAmount(item.amount, item.token)}</Text>
         <Text style={s.rowStatus}>Sent</Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 

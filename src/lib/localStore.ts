@@ -94,6 +94,15 @@ export async function addSentRequest(entry: SentRequest): Promise<void> {
   );
 }
 
+/** Cancels a single-request (not a bill share) — removes it from local tracking entirely. */
+export async function removeSentRequest(requestId: string): Promise<void> {
+  const existing = await readJson<any[]>(SENT_REQUESTS_KEY, []);
+  await AsyncStorage.setItem(
+    SENT_REQUESTS_KEY,
+    JSON.stringify(existing.filter((entry) => entry.request.id !== requestId)),
+  );
+}
+
 export async function saveBillMeta(
   billId: string,
   meta: BillMeta,
@@ -118,6 +127,44 @@ export async function addSentPayment(payment: SentPayment): Promise<void> {
   await AsyncStorage.setItem(
     SENT_PAYMENTS_KEY,
     JSON.stringify([payment, ...existing]),
+  );
+}
+
+/**
+ * Requests received via a tapped link that the user hasn't acted on yet
+ * (neither paid nor declined). The original project brief called for
+ * tracking both "requests I've created" and "requests I've received"
+ * locally — only the sent side existed until now. This is what lets
+ * Home surface an incoming request even if the user backed out of
+ * RequestScreen without deciding, instead of it only ever being
+ * reachable by re-tapping the same link.
+ */
+export type ReceivedRequest = {
+  link: string;
+  receivedAt: number;
+};
+
+const RECEIVED_REQUESTS_KEY = 'kivo.receivedRequests';
+
+export async function getReceivedRequests(): Promise<ReceivedRequest[]> {
+  return readJson<ReceivedRequest[]>(RECEIVED_REQUESTS_KEY, []);
+}
+
+export async function recordReceivedRequest(link: string): Promise<void> {
+  const existing = await getReceivedRequests();
+  if (existing.some((r) => r.link === link)) return;
+  await AsyncStorage.setItem(
+    RECEIVED_REQUESTS_KEY,
+    JSON.stringify([{ link, receivedAt: Date.now() }, ...existing]),
+  );
+}
+
+/** Called once a received request is paid, declined, or found stale (expired/already paid). */
+export async function resolveReceivedRequest(link: string): Promise<void> {
+  const existing = await getReceivedRequests();
+  await AsyncStorage.setItem(
+    RECEIVED_REQUESTS_KEY,
+    JSON.stringify(existing.filter((r) => r.link !== link)),
   );
 }
 

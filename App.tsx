@@ -23,6 +23,8 @@ import ShareRequestScreen from './src/screens/ShareRequestScreen';
 import ClaimUsernameScreen from './src/screens/ClaimUsernameScreen';
 import ShareBillScreen from './src/screens/ShareBillScreen';
 import ActivityScreen from './src/screens/ActivityScreen';
+import PickerScreen from './src/screens/PickerScreen';
+import ScanScreen from './src/screens/ScanScreen';
 import { color } from './src/theme';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -82,6 +84,8 @@ function Root() {
             <Stack.Screen name="ClaimUsername" component={ClaimUsernameScreen} />
             <Stack.Screen name="ShareBill" component={ShareBillScreen} />
             <Stack.Screen name="Activity" component={ActivityScreen} />
+            <Stack.Screen name="Picker" component={PickerScreen} />
+            <Stack.Screen name="Scan" component={ScanScreen} options={{ animation: 'fade' }} />
           </>
         )}
       </Stack.Navigator>

@@ -9,6 +9,7 @@ import {
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useWallet } from '../lib/WalletProvider';
+import { useToast } from '../lib/ToastProvider';
 import { signAndSend } from '../lib/wallet';
 import { buildSolTransfer, buildUsdcTransfer } from '../lib/transfer';
 import {
@@ -17,9 +18,14 @@ import {
   isRequestMarkedPaid,
   buildMarkPaidInstruction,
 } from '../lib/requests';
-import { addSentPayment } from '../lib/localStore';
+import {
+  addSentPayment,
+  recordReceivedRequest,
+  resolveReceivedRequest,
+} from '../lib/localStore';
 import type { RootStackParamList } from '../lib/navigation';
 import Avatar from '../components/Avatar';
+import PaymentSuccess from '../components/PaymentSuccess';
 import { color, space, radius, type, formatAmount } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Request'>;
@@ -33,14 +39,23 @@ export default function RequestScreen({ route, navigation }: Props) {
     route.params.link,
   ]);
   const { connection, session } = useWallet();
+  const toast = useToast();
   const [status, setStatus] = useState<'idle' | 'paying' | 'done' | 'failed'>(
     'idle',
   );
   const [message, setMessage] = useState<string | null>(null);
   const [alreadyPaid, setAlreadyPaid] = useState(false);
-  const [declined, setDeclined] = useState(false);
 
   const expired = request ? isExpired(request) : false;
+  const walletName = session?.label || 'your wallet';
+
+  // Tracked locally the moment this screen opens a real request, so Home
+  // can still surface it as an unresolved incoming request even if the
+  // user backs out without deciding — not just while this screen is open.
+  useEffect(() => {
+    if (!request) return;
+    recordReceivedRequest(route.params.link);
+  }, [request, route.params.link]);
 
   // A real, on-chain check, not just a nicer message — the mark_paid
   // instruction below is what actually prevents a double-pay; this just
@@ -48,8 +63,21 @@ export default function RequestScreen({ route, navigation }: Props) {
   // would refuse anyway.
   useEffect(() => {
     if (!request) return;
-    isRequestMarkedPaid(connection, request.id).then(setAlreadyPaid);
-  }, [connection, request]);
+    isRequestMarkedPaid(connection, request.id).then((paid) => {
+      setAlreadyPaid(paid);
+      if (paid) resolveReceivedRequest(route.params.link);
+    });
+  }, [connection, request, route.params.link]);
+
+  useEffect(() => {
+    if (request && expired) resolveReceivedRequest(route.params.link);
+  }, [request, expired, route.params.link]);
+
+  function decline() {
+    resolveReceivedRequest(route.params.link);
+    toast('Request declined');
+    navigation.goBack();
+  }
 
   async function pay() {
     if (!request) return;
@@ -78,6 +106,7 @@ export default function RequestScreen({ route, navigation }: Props) {
       );
       setStatus('done');
       setMessage(sig);
+      await resolveReceivedRequest(route.params.link);
       await addSentPayment({
         to: request.to.toBase58(),
         toUsername: request.toUsername,
@@ -115,6 +144,21 @@ export default function RequestScreen({ route, navigation }: Props) {
   const fromLabel = request.toUsername ? `@${request.toUsername}` : 'Someone';
   const avatarSeed = request.toUsername ?? request.to.toBase58();
 
+  if (status === 'done') {
+    return (
+      <SafeAreaView style={s.root} edges={['top', 'bottom']}>
+        <PaymentSuccess
+          amount={request.amount}
+          token={request.token}
+          toLabel={fromLabel}
+          toAddress={`${request.to.toBase58().slice(0, 4)}…${request.to.toBase58().slice(-4)}`}
+          signature={message}
+          onDone={() => navigation.goBack()}
+        />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={s.root} edges={['top', 'bottom']}>
       <View style={s.topRow}>
@@ -123,27 +167,10 @@ export default function RequestScreen({ route, navigation }: Props) {
         </Pressable>
       </View>
 
-      {declined ? (
-        <View style={s.centerBody}>
-          <Text style={s.declinedText}>Request declined</Text>
-          <Pressable style={s.doneBtn} onPress={() => navigation.goBack()}>
-            <Text style={s.doneBtnText}>Done</Text>
-          </Pressable>
-        </View>
-      ) : status === 'paying' ? (
+      {status === 'paying' ? (
         <View style={s.centerBody}>
           <ActivityIndicator size="large" color={color.owed} />
           <Text style={s.busyText}>Waiting for wallet approval…</Text>
-        </View>
-      ) : status === 'done' ? (
-        <View style={s.centerBody}>
-          <View style={s.successCircle}>
-            <Text style={s.successMark}>✓</Text>
-          </View>
-          <Text style={s.successTitle}>Paid. Confirmed on-chain.</Text>
-          <Pressable style={s.doneBtn} onPress={() => navigation.goBack()}>
-            <Text style={s.doneBtnText}>Done</Text>
-          </Pressable>
         </View>
       ) : alreadyPaid ? (
         <View style={s.centerBody}>
@@ -161,13 +188,31 @@ export default function RequestScreen({ route, navigation }: Props) {
         </View>
       ) : (
         <View style={s.idleBody}>
-          <Avatar name={fromLabel} colorSeed={avatarSeed} size={64} />
-          <Text style={s.fromLine}>{fromLabel} requested</Text>
-          <Text style={s.amount}>{formatAmount(request.amount, request.token)}</Text>
-          {request.memo ? <Text style={s.memo}>“{request.memo}”</Text> : null}
+          <Avatar name={fromLabel} colorSeed={avatarSeed} size={68} />
+          <View style={s.titleRow}>
+            <Text style={s.title}>{fromLabel}</Text>
+            {request.toUsername ? (
+              <View style={s.verifiedBadge}>
+                <Text style={s.verifiedBadgeText}>✓</Text>
+              </View>
+            ) : null}
+          </View>
+          <Text style={s.fromLine}>requests</Text>
+
+          <View style={s.amountRow}>
+            <Text style={s.amount}>
+              {formatAmount(request.amount, request.token).replace(/ SOL$|^\$/, '')}
+            </Text>
+            <Text style={s.token}>{request.token}</Text>
+          </View>
+          {request.memo ? (
+            <View style={s.memoPill}>
+              <Text style={s.memoPillText}>For · {request.memo}</Text>
+            </View>
+          ) : null}
 
           <View style={s.addrCard}>
-            <Text style={s.addrLabel}>DESTINATION ADDRESS</Text>
+            <Text style={s.addrLabel}>PAYS TO</Text>
             <Text style={s.addrValue}>{request.to.toBase58()}</Text>
             {request.toUsername ? (
               <Text style={s.addrOk}>✓ Matches @{request.toUsername}'s registered wallet</Text>
@@ -177,7 +222,7 @@ export default function RequestScreen({ route, navigation }: Props) {
           </View>
 
           <View style={s.netPill}>
-            <Text style={s.netPillText}>Settles via Solana Devnet · MWA</Text>
+            <Text style={s.netPillText}>Settles on Solana Devnet · via {walletName}</Text>
           </View>
 
           <View style={s.spacer} />
@@ -187,7 +232,7 @@ export default function RequestScreen({ route, navigation }: Props) {
           ) : null}
 
           <View style={s.actions}>
-            <Pressable style={s.declineBtn} onPress={() => setDeclined(true)}>
+            <Pressable style={s.declineBtn} onPress={decline}>
               <Text style={s.declineBtnText}>Decline</Text>
             </Pressable>
             <Pressable style={s.payBtn} onPress={pay}>
@@ -206,14 +251,35 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.bg },
   topRow: { paddingHorizontal: space.lg, paddingTop: space.lg },
   backBtn: { width: 32 },
-  backBtnText: { fontSize: 22, color: color.textFaint },
+  backBtnText: { fontSize: 24, color: color.text },
 
   centerBody: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.lg, padding: space.xl },
   idleBody: { flex: 1, alignItems: 'center', paddingHorizontal: space.xl, paddingTop: space.sm, paddingBottom: space.lg },
 
-  fromLine: { ...type.body, color: color.textDim, marginTop: space.md },
-  amount: { ...type.amountMd, color: color.owed, marginTop: space.xs },
-  memo: { ...type.bodyEmphasis, fontStyle: 'italic', color: '#C9C6D1', marginTop: space.sm },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: space.xs + 2, marginTop: space.md },
+  title: { ...type.titleLg, fontSize: 18, color: color.text },
+  verifiedBadge: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: color.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verifiedBadgeText: { fontSize: 9, color: color.bg },
+  fromLine: { ...type.caption, fontSize: 13.5, color: color.textFainter, marginTop: 2 },
+
+  amountRow: { flexDirection: 'row', alignItems: 'baseline', gap: space.xs + 2, marginTop: space.md },
+  amount: { ...type.amountHero, fontSize: 50, letterSpacing: -2, color: color.owed },
+  token: { ...type.label, fontSize: 14, color: color.textDim },
+  memoPill: {
+    marginTop: space.sm,
+    paddingVertical: space.xs + 2,
+    paddingHorizontal: space.md,
+    borderRadius: radius.pill,
+    backgroundColor: color.surface,
+  },
+  memoPillText: { ...type.caption, color: '#C9C6D1' },
 
   addrCard: {
     width: '100%',
@@ -248,10 +314,10 @@ const s = StyleSheet.create({
     paddingVertical: space.lg,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: 'rgba(255,107,94,0.4)',
+    borderColor: 'rgba(255,255,255,0.1)',
     alignItems: 'center',
   },
-  declineBtnText: { ...type.label, color: color.danger },
+  declineBtnText: { ...type.label, color: color.textDim },
   payBtn: {
     flex: 2,
     paddingVertical: space.lg,
@@ -262,16 +328,6 @@ const s = StyleSheet.create({
   payBtnText: { ...type.labelLg, color: color.bg },
 
   busyText: { ...type.body, color: color.textDim },
-  successCircle: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: color.owed,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  successMark: { fontSize: 36, color: color.bg },
-  successTitle: { ...type.titleLg, color: color.text },
   declinedText: { ...type.body, color: color.textDim, textAlign: 'center' },
   doneBtn: {
     paddingVertical: space.md,

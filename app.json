@@ -47,7 +47,13 @@
         }
       ],
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Kivo uses the camera to scan a Kivo QR code so you can quickly pick who to pay or request from."
+        }
+      ]
     ]
   }
 }

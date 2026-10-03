@@ -84,6 +84,30 @@ export default function ShareBillScreen({ route, navigation }: any) {
     toast('Link copied');
   }
 
+  // There's no single shared link for a whole bill — each participant has
+  // their own distinct request (that's what lets on-chain replay
+  // protection apply per-person). "Share split link" honestly maps to
+  // sharing a summary of every still-unpaid share at once, not a single
+  // unifying URL that doesn't really exist.
+  async function shareAll() {
+    const unpaid = shares.filter((entry) => !entry.paid);
+    if (unpaid.length === 0) {
+      toast('Everyone has paid');
+      return;
+    }
+    const lines = unpaid.map((entry) => {
+      const idx = shares.indexOf(entry) + 1;
+      return `Person ${idx}: ${formatAmount(entry.request.amount, entry.request.token)} — ${encodeLink(entry.request)}`;
+    });
+    try {
+      await Share.share({
+        message: `Split${meta?.memo ? ` — ${meta.memo}` : ''}\n\n${lines.join('\n')}`,
+      });
+    } catch {
+      // Share sheet dismissed — nothing to do.
+    }
+  }
+
   const paidCount = shares.filter((entry) => entry.paid).length;
   const remaining = shares.reduce(
     (sum, entry) => (entry.paid ? sum : sum + entry.request.amount),
@@ -99,16 +123,19 @@ export default function ShareBillScreen({ route, navigation }: any) {
         <Pressable style={s.backBtn} onPress={() => navigation.navigate('Home')}>
           <Text style={s.backBtnText}>‹</Text>
         </Pressable>
-        <Text style={s.title}>Split bill</Text>
+        <Text style={s.title}>{meta.memo || 'Split bill'}</Text>
       </View>
 
       <View style={s.summary}>
         <Text style={s.summaryLabel}>
-          {paidCount} of {shares.length} paid
+          {paidCount} of {shares.length} paid · {formatAmount(meta.total, meta.token)} total
         </Text>
-        <Text style={s.summaryAmount}>
-          {shares.length > 0 ? formatAmount(remaining, meta.token) : formatAmount(meta.total, meta.token)}
-        </Text>
+        <View style={s.summaryAmountRow}>
+          <Text style={s.summaryAmount}>
+            {formatAmount(remaining, meta.token).replace(/ SOL$|^\$/, '')}
+          </Text>
+          <Text style={s.summaryAmountUnit}>outstanding</Text>
+        </View>
         <View style={s.progressTrack}>
           <View
             style={[
@@ -128,7 +155,7 @@ export default function ShareBillScreen({ route, navigation }: any) {
         const name = `Person ${i + 1}`;
         return (
           <View key={entry.request.id} style={s.row}>
-            <Avatar name={name} colorSeed={entry.request.id} size={38} />
+            <Avatar name={name} colorSeed={entry.request.id} size={40} />
             <View style={s.rowMain}>
               <Text style={s.rowName}>{name}</Text>
               <Text style={s.rowAmount}>
@@ -158,8 +185,8 @@ export default function ShareBillScreen({ route, navigation }: any) {
         );
       })}
 
-      <Pressable style={s.homeBtn} onPress={() => navigation.navigate('Home')}>
-        <Text style={s.homeBtnText}>Back home</Text>
+      <Pressable style={s.shareBtn} onPress={shareAll}>
+        <Text style={s.shareBtnText}>Share split link</Text>
       </Pressable>
     </ScrollView>
     </SafeAreaView>
@@ -173,8 +200,8 @@ const s = StyleSheet.create({
 
   topRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginBottom: space.xs },
   backBtn: { width: 28 },
-  backBtnText: { fontSize: 20, color: color.text },
-  title: { ...type.title, fontSize: 17, color: color.text },
+  backBtnText: { fontSize: 22, color: color.text },
+  title: { ...type.title, fontSize: 18, color: color.text },
 
   summary: {
     backgroundColor: color.card,
@@ -184,7 +211,9 @@ const s = StyleSheet.create({
     padding: space.lg + 2,
   },
   summaryLabel: { ...type.caption, color: color.textFainter },
-  summaryAmount: { ...type.amountMd, color: color.text, marginTop: space.xs },
+  summaryAmountRow: { flexDirection: 'row', alignItems: 'baseline', gap: space.xs + 2, marginTop: space.xs },
+  summaryAmount: { ...type.amountMd, fontSize: 32, color: color.text },
+  summaryAmountUnit: { ...type.label, fontSize: 13, color: color.textFainter },
   progressTrack: {
     marginTop: space.md,
     height: 6,
@@ -192,17 +221,15 @@ const s = StyleSheet.create({
     backgroundColor: color.borderStrong,
     overflow: 'hidden',
   },
-  progressFill: { height: '100%', backgroundColor: color.owed, borderRadius: 3 },
+  progressFill: { height: '100%', backgroundColor: color.accent, borderRadius: 3 },
 
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
-    backgroundColor: color.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: color.border,
-    borderRadius: radius.lg,
-    padding: space.md,
+    paddingVertical: space.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: color.border,
   },
   rowMain: { flex: 1, gap: 2 },
   rowName: { ...type.label, fontSize: 14, color: color.text },
@@ -219,19 +246,19 @@ const s = StyleSheet.create({
   smallBtnText: { ...type.captionBold, fontSize: 11.5, color: color.textDim },
 
   paidBadge: {
-    backgroundColor: 'rgba(198,242,78,0.12)',
+    backgroundColor: 'rgba(198,242,78,0.1)',
     paddingHorizontal: space.sm,
     paddingVertical: space.xs,
     borderRadius: radius.pill,
   },
   paidBadgeText: { ...type.captionBold, color: color.owed },
 
-  homeBtn: {
+  shareBtn: {
     marginTop: space.sm,
     paddingVertical: space.md + 3,
     borderRadius: radius.lg,
-    backgroundColor: color.surface,
+    backgroundColor: color.owed,
     alignItems: 'center',
   },
-  homeBtnText: { ...type.label, color: color.text },
+  shareBtnText: { ...type.labelLg, color: color.bg },
 });

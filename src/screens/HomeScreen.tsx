@@ -4,8 +4,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useWallet } from '../lib/WalletProvider';
 import { getLocalUsername } from '../lib/usernames';
-import { loadActivity, type ActivityItem } from '../lib/activity';
+import { loadActivity, loadIncoming, type ActivityItem, type IncomingRequest } from '../lib/activity';
+import { syncIncomingRequests } from '../lib/sync';
 import ActivityRow from '../components/ActivityRow';
+import Avatar from '../components/Avatar';
 import { color, space, radius, type, font, formatAmount } from '../theme';
 
 const HOME_PREVIEW_LIMIT = 5;
@@ -13,19 +15,37 @@ const HOME_PREVIEW_LIMIT = 5;
 export default function HomeScreen({ navigation }: any) {
   const { session, connection } = useWallet();
   const [items, setItems] = useState<ActivityItem[]>([]);
+  const [incoming, setIncoming] = useState<IncomingRequest | null>(null);
   const [username, setUsername] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      getLocalUsername().then(setUsername);
-      loadActivity(connection).then((all) => {
-        if (!cancelled) setItems(all);
-      });
+      (async () => {
+        const localUsername = await getLocalUsername();
+        if (cancelled) return;
+        setUsername(localUsername);
+
+        // Best-effort pull of anything a known contact requested from
+        // this device's claimed username while the app wasn't open —
+        // folds straight into the same local tracking a tapped link
+        // already uses, so loadIncoming() below picks it up either way.
+        if (localUsername && session) {
+          await syncIncomingRequests(localUsername, session.publicKey.toBase58());
+        }
+        if (cancelled) return;
+
+        loadActivity(connection).then((all) => {
+          if (!cancelled) setItems(all);
+        });
+        loadIncoming(connection).then((inc) => {
+          if (!cancelled) setIncoming(inc);
+        });
+      })();
       return () => {
         cancelled = true;
       };
-    }, [connection]),
+    }, [connection, session]),
   );
 
   // Summed as a single number regardless of each item's own token — mixing
@@ -35,25 +55,43 @@ export default function HomeScreen({ navigation }: any) {
   // for the design's one pending-total card rather than two separate
   // per-token totals nobody asked for. Payments don't count toward this
   // total — they're money that already left, not money pending to you.
-  const pendingTotal = items.reduce((sum, it) => {
-    if (it.kind === 'bill') return sum + it.totalFromOthers;
-    if (it.kind === 'request') return it.paid ? sum : sum + it.amount;
-    return sum;
-  }, 0);
+  const pendingItems = items.filter(
+    (it) => (it.kind === 'bill' && it.totalFromOthers > 0) || (it.kind === 'request' && !it.paid),
+  );
+  const pendingTotal = pendingItems.reduce(
+    (sum, it) => sum + (it.kind === 'bill' ? it.totalFromOthers : it.amount),
+    0,
+  );
+  const pendingCountLabel =
+    pendingItems.length === 0
+      ? 'Nothing outstanding'
+      : `${pendingItems.length} open request${pendingItems.length > 1 ? 's' : ''}`;
+  const pendingAvatars = pendingItems.slice(0, 3);
+
   const address = session ? session.publicKey.toBase58() : null;
+  const walletName = session?.label || 'Wallet';
   const visibleItems = items.slice(0, HOME_PREVIEW_LIMIT);
+
+  const incFromLabel = incoming?.request.toUsername ? `@${incoming.request.toUsername}` : 'Someone';
+  const incSeed = incoming ? incoming.request.toUsername ?? incoming.request.to.toBase58() : '';
 
   return (
     <SafeAreaView style={s.safeArea} edges={['top', 'bottom']}>
     <ScrollView style={s.root} contentContainerStyle={s.content}>
       <View style={s.headerRow}>
-        <View>
-          <Text style={s.wordmark}>Kivo</Text>
-          {address ? (
-            <Text style={s.walletSub}>
-              {address.slice(0, 4)}…{address.slice(-4)}
-            </Text>
-          ) : null}
+        <View style={s.brandRow}>
+          <View style={s.miniMark}>
+            <View style={s.miniMarkLime} />
+            <View style={s.miniMarkPurple} />
+          </View>
+          <View>
+            <Text style={s.wordmark}>Kivo</Text>
+            {address ? (
+              <Text style={s.walletSub}>
+                {walletName} · {address.slice(0, 4)}…{address.slice(-4)}
+              </Text>
+            ) : null}
+          </View>
         </View>
         {username ? (
           <View style={s.usernameChip}>
@@ -68,8 +106,63 @@ export default function HomeScreen({ navigation }: any) {
 
       <View style={s.pendingCard}>
         <Text style={s.pendingLabel}>PENDING TO YOU</Text>
-        <Text style={s.pendingAmount}>{formatAmount(pendingTotal, 'USDC')}</Text>
+        <View style={s.pendingAmountRow}>
+          <Text style={s.pendingAmount}>{pendingTotal.toFixed(2)}</Text>
+          <Text style={s.pendingAmountToken}>USDC</Text>
+        </View>
+        <View style={s.pendingBottomRow}>
+          <Text style={s.pendingCount}>{pendingCountLabel}</Text>
+          {pendingAvatars.length > 0 ? (
+            <View style={s.pendingAvatarsRow}>
+              {pendingAvatars.map((it, i) => (
+                <View key={it.id} style={[s.pendingAvatarWrap, i > 0 && s.pendingAvatarOverlap]}>
+                  <Avatar
+                    name={it.kind === 'request' ? it.counterparty : it.memo || 'Split bill'}
+                    colorSeed={it.id}
+                    size={28}
+                  />
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </View>
       </View>
+
+      {incoming ? (
+        <Pressable
+          style={s.incomingCard}
+          onPress={() => navigation.navigate('Request', { link: incoming.link })}
+        >
+          <View style={s.incomingTopRow}>
+            <Avatar name={incFromLabel} colorSeed={incSeed} size={42} />
+            <View style={s.incomingMain}>
+              <Text style={s.incomingTitle} numberOfLines={1}>
+                <Text style={s.incomingTitleBold}>{incFromLabel}</Text> requested
+              </Text>
+              <Text style={s.incomingSub} numberOfLines={1}>
+                {incoming.request.memo || '—'} · pending
+              </Text>
+            </View>
+            <Text style={s.incomingAmount}>
+              {formatAmount(incoming.request.amount, incoming.request.token)}
+            </Text>
+          </View>
+          <View style={s.incomingActions}>
+            <Pressable
+              style={s.incomingDecline}
+              onPress={() => navigation.navigate('Request', { link: incoming.link })}
+            >
+              <Text style={s.incomingDeclineText}>Decline</Text>
+            </Pressable>
+            <Pressable
+              style={s.incomingReview}
+              onPress={() => navigation.navigate('Request', { link: incoming.link })}
+            >
+              <Text style={s.incomingReviewText}>Review & pay</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      ) : null}
 
       {items.length === 0 ? (
         <View style={s.empty}>
@@ -115,11 +208,33 @@ export default function HomeScreen({ navigation }: any) {
 const s = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: color.bg },
   root: { flex: 1, backgroundColor: color.bg },
-  content: { padding: space.xl, paddingBottom: space.xxl, gap: space.lg },
+  content: { padding: space.xl, paddingBottom: space.xxl, gap: space.md + 2 },
 
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  wordmark: { ...type.title, color: color.text },
-  walletSub: { ...type.caption, color: color.textFaint, marginTop: 2 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm + 2 },
+  miniMark: { width: 28, height: 28 },
+  miniMarkLime: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    backgroundColor: color.owed,
+  },
+  miniMarkPurple: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 14,
+    height: 14,
+    borderRadius: 4,
+    backgroundColor: color.accent,
+    borderWidth: 2,
+    borderColor: color.bg,
+  },
+  wordmark: { ...type.title, fontSize: 18, color: color.text },
+  walletSub: { ...type.caption, fontSize: 11.5, fontFamily: 'monospace', color: '#6E6E78', marginTop: 4 },
 
   usernameChip: {
     paddingHorizontal: space.md,
@@ -129,7 +244,7 @@ const s = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: color.border,
   },
-  usernameChipText: { ...type.label, fontSize: 13, color: color.owed },
+  usernameChipText: { ...type.label, fontSize: 13, color: color.text },
   claimChip: {
     paddingHorizontal: space.md,
     paddingVertical: space.sm,
@@ -146,8 +261,57 @@ const s = StyleSheet.create({
     borderColor: color.border,
     padding: space.xl,
   },
-  pendingLabel: { ...type.sectionLabel, color: color.textDim },
-  pendingAmount: { ...type.amount, color: color.text, marginTop: space.xs + 2 },
+  pendingLabel: { ...type.captionBold, fontSize: 11.5, letterSpacing: 0.6, color: color.textFainter },
+  pendingAmountRow: { flexDirection: 'row', alignItems: 'baseline', gap: space.sm, marginTop: space.xs + 2 },
+  pendingAmount: { ...type.amount, color: color.text },
+  pendingAmountToken: { ...type.label, fontSize: 13, color: color.textFainter },
+  pendingBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: space.md,
+  },
+  pendingCount: { ...type.body, fontSize: 13, color: color.textDim },
+  pendingAvatarsRow: { flexDirection: 'row', paddingLeft: space.sm },
+  pendingAvatarWrap: {
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#17171F',
+  },
+  pendingAvatarOverlap: { marginLeft: -8 },
+
+  incomingCard: {
+    backgroundColor: '#14131C',
+    borderWidth: 1,
+    borderColor: 'rgba(158,140,252,0.28)',
+    borderRadius: radius.xl,
+    padding: space.md + 2,
+    gap: space.md,
+  },
+  incomingTopRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  incomingMain: { flex: 1, minWidth: 0 },
+  incomingTitle: { ...type.body, fontSize: 14, color: color.textDim },
+  incomingTitleBold: { fontFamily: font.bodyExtraBold, color: color.text },
+  incomingSub: { ...type.caption, fontSize: 12.5, color: color.textFainter, marginTop: 2 },
+  incomingAmount: { ...type.label, fontSize: 17, color: color.owed },
+  incomingActions: { flexDirection: 'row', gap: space.sm },
+  incomingDecline: {
+    flex: 1,
+    paddingVertical: space.sm + 3,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+  },
+  incomingDeclineText: { ...type.label, fontSize: 13, color: color.textDim },
+  incomingReview: {
+    flex: 1.6,
+    paddingVertical: space.sm + 3,
+    borderRadius: radius.md,
+    backgroundColor: color.text,
+    alignItems: 'center',
+  },
+  incomingReviewText: { ...type.labelLg, fontSize: 13, color: color.bg },
 
   empty: { alignItems: 'center', gap: space.sm, paddingVertical: space.xl, paddingHorizontal: space.lg },
   emptyIcon: {

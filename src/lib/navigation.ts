@@ -16,11 +16,19 @@
  * through — same idea ShareBillScreen already uses (load by billId, not
  * by a snapshot passed in params).
  */
+export type PickedRecipient = { address: string; username?: string };
+
 export type RootStackParamList = {
   Connect: undefined;
   Home: undefined;
   Request: { link: string };
-  New: { mode?: 'request' | 'pay' | 'split' } | undefined;
+  // selectedRecipient is written by Picker/Scan navigating back to this
+  // same screen instance (React Navigation merges params into the
+  // existing route rather than pushing a new one) — the standard pattern
+  // for "returning a value" from a pushed screen.
+  New: { mode?: 'request' | 'pay' | 'split'; selectedRecipient?: PickedRecipient } | undefined;
+  Picker: { mode: 'pay' | 'request' };
+  Scan: { mode: 'pay' | 'request' };
   ShareRequest: { link: string; requestedFromLabel?: string };
   ClaimUsername: undefined;
   ShareBill: { billId: string };

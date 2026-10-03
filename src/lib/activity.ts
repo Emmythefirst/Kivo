@@ -1,6 +1,12 @@
 import type { Connection } from '@solana/web3.js';
-import { getSentRequests, getSentPayments, type SentRequest } from './localStore';
-import { isRequestMarkedPaid } from './requests';
+import {
+  getSentRequests,
+  getSentPayments,
+  getReceivedRequests,
+  resolveReceivedRequest,
+  type SentRequest,
+} from './localStore';
+import { decodeLink, isExpired, isRequestMarkedPaid, type PaymentRequest } from './requests';
 
 export type RequestActivityItem = {
   kind: 'request';
@@ -120,4 +126,35 @@ export async function loadActivity(connection: Connection): Promise<ActivityItem
 /** "September 2026" style label for grouping the full history by month. */
 export function monthLabel(ms: number): string {
   return new Date(ms).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
+export type IncomingRequest = { link: string; request: PaymentRequest };
+
+/**
+ * The most recent request received via a tapped link that's still
+ * genuinely actionable — not yet paid, not expired. Stale entries
+ * (expired, or already paid through some other route) are pruned from
+ * local storage as a side effect of checking them, so this list doesn't
+ * grow stale records forever. Returns null if there's nothing pending.
+ */
+export async function loadIncoming(connection: Connection): Promise<IncomingRequest | null> {
+  const received = await getReceivedRequests(); // newest first
+  for (const r of received) {
+    const request = decodeLink(r.link);
+    if (!request) {
+      await resolveReceivedRequest(r.link);
+      continue;
+    }
+    if (isExpired(request)) {
+      await resolveReceivedRequest(r.link);
+      continue;
+    }
+    const paid = await isRequestMarkedPaid(connection, request.id);
+    if (paid) {
+      await resolveReceivedRequest(r.link);
+      continue;
+    }
+    return { link: r.link, request };
+  }
+  return null;
 }

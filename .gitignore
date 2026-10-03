@@ -31,3 +31,6 @@ yarn-error.*
 
 # Editor
 .vscode/
+
+# Local-only handoff log
+progress.md

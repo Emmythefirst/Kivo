@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -177,7 +177,21 @@ export default function NewRequestScreen({ navigation, route }: any) {
     setPayError(null);
   }
 
+  // Synchronous guard against double-taps: the request is created and
+  // saved before any state update could disable the button, so a quick
+  // second tap would otherwise create a second, duplicate request.
+  const submitLock = useRef(false);
   async function handleSubmit() {
+    if (submitLock.current) return;
+    submitLock.current = true;
+    try {
+      await submitInner();
+    } finally {
+      submitLock.current = false;
+    }
+  }
+
+  async function submitInner() {
     if (!canSubmit || payStatus === 'paying' || sending) return;
 
     if (isSplit) {
@@ -229,7 +243,9 @@ export default function NewRequestScreen({ navigation, route }: any) {
       });
       scheduleBillReminder(trimmedMemo, peopleCount);
 
-      navigation.navigate('ShareBill', { billId });
+      // replace, not navigate: otherwise Back returns to this still-filled
+      // form, where another tap would create a second request.
+      navigation.replace('ShareBill', { billId });
       return;
     }
 
@@ -275,7 +291,7 @@ export default function NewRequestScreen({ navigation, route }: any) {
         if (ok) deliveredTo = `@${recipient.username}`;
       }
 
-      navigation.navigate('ShareRequest', {
+      navigation.replace('ShareRequest', {
         link: encodeLink(req),
         requestedFromLabel,
         deliveredTo,

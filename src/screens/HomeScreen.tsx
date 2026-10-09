@@ -111,10 +111,16 @@ export default function HomeScreen({ navigation }: any) {
   const pendingItems = items.filter(
     (it) => (it.kind === 'bill' && it.totalFromOthers > 0) || (it.kind === 'request' && !it.paid),
   );
-  const pendingTotal = pendingItems.reduce(
-    (sum, it) => sum + (it.kind === 'bill' ? it.totalFromOthers : it.amount),
-    0,
-  );
+  // Totals are kept per token — adding SOL and USDC into one number (and
+  // labelling it USDC) would show e.g. 2 SOL as "2.00 USDC".
+  const pendingTotals: Record<'USDC' | 'SOL', number> = { USDC: 0, SOL: 0 };
+  for (const it of pendingItems) {
+    if (it.kind === 'payment') continue;
+    pendingTotals[it.token] += it.kind === 'bill' ? it.totalFromOthers : it.amount;
+  }
+  const pendingTokens = (['USDC', 'SOL'] as const).filter((t) => pendingTotals[t] > 0);
+  const primaryToken = pendingTokens[0] ?? 'USDC';
+  const secondaryToken = pendingTokens[1];
   const pendingCountLabel =
     pendingItems.length === 0
       ? 'Nothing outstanding'
@@ -170,8 +176,15 @@ export default function HomeScreen({ navigation }: any) {
       <View style={s.pendingCard}>
         <Text style={s.pendingLabel}>PENDING TO YOU</Text>
         <View style={s.pendingAmountRow}>
-          <Text style={s.pendingAmount}>{pendingTotal.toFixed(2)}</Text>
-          <Text style={s.pendingAmountToken}>USDC</Text>
+          <Text style={s.pendingAmount}>
+            {pendingTotals[primaryToken].toFixed(primaryToken === 'SOL' ? 4 : 2)}
+          </Text>
+          <Text style={s.pendingAmountToken}>{primaryToken}</Text>
+          {secondaryToken ? (
+            <Text style={s.pendingAmountToken}>
+              + {pendingTotals[secondaryToken].toFixed(secondaryToken === 'SOL' ? 4 : 2)} {secondaryToken}
+            </Text>
+          ) : null}
         </View>
         <View style={s.pendingBottomRow}>
           <Text style={s.pendingCount}>{pendingCountLabel}</Text>

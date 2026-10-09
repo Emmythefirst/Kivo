@@ -12,13 +12,13 @@ import { useWallet } from '../lib/WalletProvider';
 import { signAndSend } from '../lib/wallet';
 import {
   isValidUsername,
-  isAvailable,
+  resolveUsername,
   buildClaimTransaction,
   setLocalUsername,
 } from '../lib/usernames';
 import { color, space, radius, type } from '../theme';
 
-type Availability = 'idle' | 'short' | 'checking' | 'available' | 'taken' | 'invalid';
+type Availability = 'idle' | 'short' | 'checking' | 'available' | 'yours' | 'taken' | 'invalid';
 
 export default function ClaimUsernameScreen({ navigation }: any) {
   const { session, connection } = useWallet();
@@ -46,14 +46,25 @@ export default function ClaimUsernameScreen({ navigation }: any) {
     setAvailability('checking');
     const handle = setTimeout(async () => {
       try {
-        const free = await isAvailable(connection, trimmed);
-        setAvailability(free ? 'available' : 'taken');
+        const existing = await resolveUsername(connection, trimmed);
+        // Already registered to *this* wallet (e.g. after a reinstall wiped
+        // the local copy) — offer to restore it instead of calling it taken.
+        setAvailability(
+          !existing ? 'available' : existing.owner.equals(session!.publicKey) ? 'yours' : 'taken',
+        );
       } catch {
         setAvailability('idle');
       }
     }, 400);
     return () => clearTimeout(handle);
-  }, [username, connection]);
+  }, [username, connection, session]);
+
+  // Restoring needs no transaction: the name is already on-chain and owned
+  // by this wallet; only the app's local record of it was lost.
+  async function handleRestore() {
+    await setLocalUsername(username);
+    navigation.navigate('Home');
+  }
 
   async function handleClaim() {
     if (availability !== 'available' || claiming) return;
@@ -82,6 +93,7 @@ export default function ClaimUsernameScreen({ navigation }: any) {
     short: 'Keep going — at least 3 characters',
     checking: 'Checking availability…',
     available: `@${username} is available`,
+    yours: `@${username} is already yours — tap to restore it`,
     taken: `@${username} is taken`,
     invalid: '3-20 characters: letters, numbers, underscore',
   };
@@ -90,6 +102,7 @@ export default function ClaimUsernameScreen({ navigation }: any) {
     short: color.textFaint,
     checking: color.textFaint,
     available: color.success,
+    yours: color.success,
     taken: color.danger,
     invalid: color.danger,
   };
@@ -98,6 +111,7 @@ export default function ClaimUsernameScreen({ navigation }: any) {
     short: color.borderStrong,
     checking: color.borderStrong,
     available: 'rgba(154,217,122,0.4)',
+    yours: 'rgba(154,217,122,0.4)',
     taken: 'rgba(255,107,94,0.4)',
     invalid: 'rgba(255,107,94,0.4)',
   };
@@ -141,10 +155,10 @@ export default function ClaimUsernameScreen({ navigation }: any) {
         <Pressable
           style={[
             s.btn,
-            availability === 'available' ? s.btnActive : s.btnDisabled,
+            availability === 'available' || availability === 'yours' ? s.btnActive : s.btnDisabled,
           ]}
-          onPress={handleClaim}
-          disabled={availability !== 'available' || claiming}
+          onPress={availability === 'yours' ? handleRestore : handleClaim}
+          disabled={(availability !== 'available' && availability !== 'yours') || claiming}
         >
           {claiming ? (
             <ActivityIndicator color={color.bg} />
@@ -152,10 +166,12 @@ export default function ClaimUsernameScreen({ navigation }: any) {
             <Text
               style={[
                 s.btnText,
-                availability === 'available' ? s.btnTextActive : s.btnTextDisabled,
+                availability === 'available' || availability === 'yours'
+                  ? s.btnTextActive
+                  : s.btnTextDisabled,
               ]}
             >
-              Claim @{username || 'username'}
+              {availability === 'yours' ? 'Restore' : 'Claim'} @{username || 'username'}
             </Text>
           )}
         </Pressable>

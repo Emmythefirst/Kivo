@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet, Linking } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Avatar from './Avatar';
 import { encodeLink } from '../lib/requests';
 import type { ActivityItem } from '../lib/activity';
@@ -81,7 +81,15 @@ export default function ActivityRow({
     <Pressable
       style={s.row}
       onPress={() =>
-        Linking.openURL(`https://explorer.solana.com/tx/${item.signature}?cluster=devnet`)
+        navigation.navigate('PaymentReceipt', {
+          to: item.to,
+          toUsername: item.toUsername,
+          amount: item.amount,
+          token: item.token,
+          memo: item.memo,
+          createdAt: item.createdAt,
+          signature: item.signature,
+        })
       }
     >
       <Avatar name={item.toUsername ?? item.to} colorSeed={item.to} />

@@ -12,7 +12,10 @@ import SuccessCheck from '../components/SuccessCheck';
 import { color, space, radius, type, formatAmount } from '../theme';
 
 export default function ShareRequestScreen({ route, navigation }: any) {
-  const { link, requestedFromLabel } = route.params;
+  const { link, requestedFromLabel, deliveredTo } = route.params;
+  // When the request was already delivered straight to their Home, the
+  // link becomes a fallback the sender has to opt into.
+  const [showLink, setShowLink] = useState(!deliveredTo);
   // Reconstructed from the link, not passed as its own param — a decoded
   // PaymentRequest embeds a PublicKey, which React Navigation warns about
   // passing through navigation state.
@@ -99,7 +102,9 @@ export default function ShareRequestScreen({ route, navigation }: any) {
 
       <View style={s.topBlock}>
         <SuccessCheck size={56} />
-        <Text style={s.createdLabel}>REQUEST CREATED</Text>
+        <Text style={s.createdLabel}>
+          {deliveredTo ? `SENT TO ${deliveredTo.toUpperCase()}` : 'REQUEST CREATED'}
+        </Text>
       </View>
 
       <View style={s.card}>
@@ -108,6 +113,9 @@ export default function ShareRequestScreen({ route, navigation }: any) {
           <Text style={s.token}>{request.token}</Text>
         </View>
         <Text style={s.subtitle}>{fromLabel}</Text>
+        {deliveredTo ? (
+          <Text style={s.memo}>They'll see it on their Home next time they open Kivo</Text>
+        ) : null}
         {request.memo ? <Text style={s.memo}>For {request.memo}</Text> : null}
         <View style={[s.statusPill, paid && s.statusPillPaid]}>
           <View style={[s.statusDot, paid && s.statusDotPaid]} />
@@ -117,29 +125,44 @@ export default function ShareRequestScreen({ route, navigation }: any) {
         </View>
       </View>
 
-      <View style={s.linkRow}>
-        <Text style={s.link} numberOfLines={1}>
-          {link}
-        </Text>
-        <Pressable style={s.copyBtn} onPress={copy}>
-          <Text style={s.copyBtnText}>Copy</Text>
-        </Pressable>
-      </View>
+      {showLink ? (
+        <View style={s.linkRow}>
+          <Text style={s.link} numberOfLines={1}>
+            {link}
+          </Text>
+          <Pressable style={s.copyBtn} onPress={copy}>
+            <Text style={s.copyBtnText}>Copy</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       <View style={s.spacer} />
 
       <Text style={s.expiresText}>Expires in 7 days</Text>
-      <Pressable style={s.shareBtn} onPress={share}>
-        <Text style={s.shareBtnText}>Share request</Text>
-      </Pressable>
-      <View style={s.secondaryRow}>
-        <Pressable style={s.secondaryBtn} onPress={copy}>
-          <Text style={s.secondaryBtnText}>Copy link</Text>
-        </Pressable>
-        <Pressable style={s.secondaryBtn} onPress={() => setQrOpen(true)}>
-          <Text style={s.secondaryBtnText}>Show QR</Text>
-        </Pressable>
-      </View>
+      {showLink ? (
+        <>
+          <Pressable style={s.shareBtn} onPress={share}>
+            <Text style={s.shareBtnText}>Share request</Text>
+          </Pressable>
+          <View style={s.secondaryRow}>
+            <Pressable style={s.secondaryBtn} onPress={copy}>
+              <Text style={s.secondaryBtnText}>Copy link</Text>
+            </Pressable>
+            <Pressable style={s.secondaryBtn} onPress={() => setQrOpen(true)}>
+              <Text style={s.secondaryBtnText}>Show QR</Text>
+            </Pressable>
+          </View>
+        </>
+      ) : (
+        <>
+          <Pressable style={s.shareBtn} onPress={() => navigation.navigate('Home')}>
+            <Text style={s.shareBtnText}>Done</Text>
+          </Pressable>
+          <Pressable style={s.secondaryBtn} onPress={() => setShowLink(true)}>
+            <Text style={s.secondaryBtnText}>Send a link instead</Text>
+          </Pressable>
+        </>
+      )}
 
       <Modal visible={qrOpen} transparent animationType="fade" onRequestClose={() => setQrOpen(false)}>
         <Pressable style={s.sheetBackdrop} onPress={() => setQrOpen(false)}>

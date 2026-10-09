@@ -25,6 +25,7 @@ import ShareBillScreen from './src/screens/ShareBillScreen';
 import ActivityScreen from './src/screens/ActivityScreen';
 import PickerScreen from './src/screens/PickerScreen';
 import ScanScreen from './src/screens/ScanScreen';
+import PaymentReceiptScreen from './src/screens/PaymentReceiptScreen';
 import { color } from './src/theme';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -85,6 +86,7 @@ function Root() {
             <Stack.Screen name="ShareBill" component={ShareBillScreen} />
             <Stack.Screen name="Activity" component={ActivityScreen} />
             <Stack.Screen name="Picker" component={PickerScreen} />
+            <Stack.Screen name="PaymentReceipt" component={PaymentReceiptScreen} />
             <Stack.Screen name="Scan" component={ScanScreen} options={{ animation: 'fade' }} />
           </>
         )}

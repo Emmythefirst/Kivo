@@ -31,15 +31,18 @@ export async function pushPendingRequest(params: {
   token: string;
   memo?: string;
   createdAt: number;
-}): Promise<void> {
+}): Promise<boolean> {
   try {
-    await fetch(`${API_BASE}/api/requests`, {
+    const res = await fetch(`${API_BASE}/api/requests`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
     });
+    return res.ok;
   } catch {
-    // Best-effort — see above.
+    // Best-effort — see above. Callers use the boolean to decide whether
+    // it's honest to tell the sender "sent" or to fall back to the link.
+    return false;
   }
 }
 

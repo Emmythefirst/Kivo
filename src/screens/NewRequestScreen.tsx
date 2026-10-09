@@ -69,6 +69,28 @@ export default function NewRequestScreen({ navigation, route }: any) {
   >('idle');
   const [payError, setPayError] = useState<string | null>(null);
   const [txSig, setTxSig] = useState<string | null>(null);
+  // True when the picked recipient is a username AND someone you've paid
+  // before — the only case where a request can be delivered straight to
+  // their Home instead of via a link (see the safeguard note in
+  // handleSubmit).
+  const [deliverable, setDeliverable] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!recipient?.username) {
+      setDeliverable(false);
+      return;
+    }
+    getRecentContacts().then((contacts) => {
+      if (!cancelled) {
+        setDeliverable(contacts.some((c) => c.address === recipient.address));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [recipient]);
 
   // Picker/Scan "return a value" by navigating back to this same screen
   // instance with a new param — React Navigation pops back to the
@@ -130,7 +152,7 @@ export default function NewRequestScreen({ navigation, route }: any) {
   }
 
   async function handleSubmit() {
-    if (!canSubmit || payStatus === 'paying') return;
+    if (!canSubmit || payStatus === 'paying' || sending) return;
 
     if (isSplit) {
       const { share, creatorShare } = splitEvenly(amountNum, peopleCount);
@@ -185,26 +207,29 @@ export default function NewRequestScreen({ navigation, route }: any) {
       // stranger's Home screen just because their username happens to be
       // guessable/known. Anyone else still gets the normal link-only
       // flow, same as always; this is additive, never a replacement.
-      if (recipient?.username) {
-        const contacts = await getRecentContacts();
-        const alreadyKnown = contacts.some((c) => c.address === recipient.address);
-        if (alreadyKnown) {
-          pushPendingRequest({
-            id: req.id,
-            username: recipient.username,
-            link: encodeLink(req),
-            fromLabel: localUsername ? `@${localUsername}` : undefined,
-            amount: amountNum,
-            token,
-            memo: memo.trim() || undefined,
-            createdAt: req.createdAt,
-          });
-        }
+      let deliveredTo: string | undefined;
+      if (deliverable && recipient?.username) {
+        setSending(true);
+        const ok = await pushPendingRequest({
+          id: req.id,
+          username: recipient.username,
+          link: encodeLink(req),
+          fromLabel: localUsername ? `@${localUsername}` : undefined,
+          amount: amountNum,
+          token,
+          memo: memo.trim() || undefined,
+          createdAt: req.createdAt,
+        });
+        setSending(false);
+        // Only claim "sent" if the server actually accepted it; otherwise
+        // fall through to the normal link-first screen.
+        if (ok) deliveredTo = `@${recipient.username}`;
       }
 
       navigation.navigate('ShareRequest', {
         link: encodeLink(req),
         requestedFromLabel,
+        deliveredTo,
       });
       return;
     }
@@ -249,7 +274,7 @@ export default function NewRequestScreen({ navigation, route }: any) {
     }
   }
 
-  const ctaDisabled = !canSubmit || payStatus === 'paying';
+  const ctaDisabled = !canSubmit || payStatus === 'paying' || sending;
   let ctaLabel = 'Continue';
   if (mode === 'pay') {
     ctaLabel = !amountValid
@@ -262,7 +287,16 @@ export default function NewRequestScreen({ navigation, route }: any) {
       ? `Split ${formatAmount(amountNum, token)} · ${peopleCount} people`
       : 'Enter the bill total';
   } else {
-    ctaLabel = amountValid ? `Request ${formatAmount(amountNum, token)}` : 'Enter an amount';
+    ctaLabel = !amountValid
+      ? 'Enter an amount'
+      : deliverable && recipient?.username
+        ? `Request ${formatAmount(amountNum, token)} from @${
+            recipient.username.length > 10
+              ? `${recipient.username.slice(0, 10)}…`
+              : recipient.username
+          }`
+        : `Request ${formatAmount(amountNum, token)}`;
+    if (sending) ctaLabel = 'Sending…';
   }
 
   if (payStatus === 'done' && recipient) {
@@ -474,6 +508,8 @@ export default function NewRequestScreen({ navigation, route }: any) {
             >
               <Text
                 style={[s.submitBtnText, ctaDisabled && s.submitBtnTextDisabled]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
               >
                 {ctaLabel}
               </Text>

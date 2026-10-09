@@ -10,16 +10,32 @@ type Props = {
   toAddress: string;
   signature: string | null;
   onDone: () => void;
+  /** Receipt mode (reopened from Activity) — optional extras. */
+  title?: string;
+  dateLabel?: string;
+  memo?: string;
+  doneLabel?: string;
 };
 
 /** Full-screen "payment confirmed" view — shared by the composer's Pay mode and the incoming-request pay flow. */
-export default function PaymentSuccess({ amount, token, toLabel, toAddress, signature, onDone }: Props) {
+export default function PaymentSuccess({
+  amount,
+  token,
+  toLabel,
+  toAddress,
+  signature,
+  onDone,
+  title = 'Paid',
+  dateLabel,
+  memo,
+  doneLabel = 'Done',
+}: Props) {
   const amountStr = token === 'USDC' ? amount.toFixed(2) : amount.toFixed(4);
   return (
     <View style={s.body}>
       <View style={s.center}>
         <SuccessCheck size={84} />
-        <Text style={s.paidLabel}>Paid</Text>
+        <Text style={s.paidLabel}>{title}</Text>
         <View style={s.amountRow}>
           <Text style={s.amount}>{amountStr}</Text>
           <Text style={s.token}>{token}</Text>
@@ -28,6 +44,8 @@ export default function PaymentSuccess({ amount, token, toLabel, toAddress, sign
           to <Text style={s.toName}>{toLabel}</Text>
         </Text>
         <Text style={s.addr}>{toAddress}</Text>
+        {memo ? <Text style={s.meta}>For {memo}</Text> : null}
+        {dateLabel ? <Text style={s.meta}>{dateLabel}</Text> : null}
         <View style={s.confirmedPill}>
           <View style={s.confirmedDot} />
           <Text style={s.confirmedText}>Confirmed on Solana</Text>
@@ -43,7 +61,7 @@ export default function PaymentSuccess({ amount, token, toLabel, toAddress, sign
         ) : null}
       </View>
       <Pressable style={s.doneBtn} onPress={onDone}>
-        <Text style={s.doneBtnText}>Done</Text>
+        <Text style={s.doneBtnText}>{doneLabel}</Text>
       </Pressable>
     </View>
   );
@@ -59,6 +77,7 @@ const s = StyleSheet.create({
   to: { ...type.bodyEmphasis, fontSize: 15, color: '#C9C6D1', marginTop: space.xs },
   toName: { fontFamily: font.bodyExtraBold, color: color.text },
   addr: { ...type.caption, fontSize: 11.5, color: color.textFaint, fontFamily: 'monospace', marginTop: space.xs },
+  meta: { ...type.caption, fontSize: 12.5, color: color.textFaint, marginTop: space.xs },
   confirmedPill: {
     flexDirection: 'row',
     alignItems: 'center',

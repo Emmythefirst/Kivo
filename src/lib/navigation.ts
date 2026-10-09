@@ -29,7 +29,16 @@ export type RootStackParamList = {
   New: { mode?: 'request' | 'pay' | 'split'; selectedRecipient?: PickedRecipient } | undefined;
   Picker: { mode: 'pay' | 'request' };
   Scan: { mode: 'pay' | 'request' };
-  ShareRequest: { link: string; requestedFromLabel?: string };
+  ShareRequest: { link: string; requestedFromLabel?: string; deliveredTo?: string };
+  PaymentReceipt: {
+    to: string;
+    toUsername?: string;
+    amount: number;
+    token: 'USDC' | 'SOL';
+    memo?: string;
+    createdAt: number;
+    signature: string;
+  };
   ClaimUsername: undefined;
   ShareBill: { billId: string };
   Activity: undefined;

@@ -90,14 +90,15 @@ export default function ShareBillScreen({ route, navigation }: any) {
   // sharing a summary of every still-unpaid share at once, not a single
   // unifying URL that doesn't really exist.
   async function shareAll() {
-    const unpaid = shares.filter((entry) => !entry.paid);
+    // Shares already delivered straight to someone's Home don't need a link.
+    const unpaid = shares.filter((entry) => !entry.paid && !entry.delivered);
     if (unpaid.length === 0) {
-      toast('Everyone has paid');
+      toast('Everyone has paid or been sent their share');
       return;
     }
     const lines = unpaid.map((entry) => {
       const idx = shares.indexOf(entry) + 1;
-      return `Person ${idx}: ${formatAmount(entry.request.amount, entry.request.token)} — ${encodeLink(entry.request)}`;
+      return `${entry.requestedFromLabel ?? `Person ${idx}`}: ${formatAmount(entry.request.amount, entry.request.token)} — ${encodeLink(entry.request)}`;
     });
     try {
       await Share.share({
@@ -152,7 +153,7 @@ export default function ShareBillScreen({ route, navigation }: any) {
 
       {shares.map((entry, i) => {
         const link = encodeLink(entry.request);
-        const name = `Person ${i + 1}`;
+        const name = entry.requestedFromLabel ?? `Person ${i + 1}`;
         return (
           <View key={entry.request.id} style={s.row}>
             <Avatar name={name} colorSeed={entry.request.id} size={40} />
@@ -160,6 +161,7 @@ export default function ShareBillScreen({ route, navigation }: any) {
               <Text style={s.rowName}>{name}</Text>
               <Text style={s.rowAmount}>
                 {formatAmount(entry.request.amount, entry.request.token)}
+                {entry.delivered && !entry.paid ? ' · Sent to their Home' : ''}
               </Text>
             </View>
             {entry.paid ? (

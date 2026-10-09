@@ -20,6 +20,9 @@ const MAX_RECENT_CONTACTS = 10;
 export type SentRequest = {
   request: PaymentRequest;
   requestedFromLabel?: string;
+  // True when this request was filed straight onto the recipient's Home
+  // (a contact with a username) rather than only handed out as a link.
+  delivered?: boolean;
 };
 
 /**

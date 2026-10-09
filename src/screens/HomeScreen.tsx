@@ -1,5 +1,5 @@
-import React, { useCallback, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import React, { useCallback, useRef, useState } from 'react';
+import { View, Text, ScrollView, Pressable, StyleSheet, AppState, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useWallet } from '../lib/WalletProvider';
@@ -12,41 +12,94 @@ import { color, space, radius, type, font, formatAmount } from '../theme';
 
 const HOME_PREVIEW_LIMIT = 5;
 
+// Last result kept at module level so Home paints real data instantly
+// whenever it mounts or refocuses, and updates in place when the fresh
+// load lands — never flashes the empty state while a load is in flight.
+let homeCache: {
+  address: string;
+  items: ActivityItem[];
+  incoming: IncomingRequest | null;
+  username: string | null;
+} | null = null;
+
+// How often Home re-checks while it's on screen — each pass does on-chain
+// paid checks, so not much tighter than this on a free RPC tier.
+const POLL_MS = 20000;
+
 export default function HomeScreen({ navigation }: any) {
   const { session, connection } = useWallet();
-  const [items, setItems] = useState<ActivityItem[]>([]);
-  const [incoming, setIncoming] = useState<IncomingRequest | null>(null);
-  const [username, setUsername] = useState<string | null>(null);
+  // Only reuse the cache for the same wallet — a different wallet after a
+  // disconnect/reconnect must not briefly show someone else's activity.
+  const cached =
+    homeCache && session && homeCache.address === session.publicKey.toBase58() ? homeCache : null;
+  const [items, setItems] = useState<ActivityItem[]>(cached?.items ?? []);
+  const [incoming, setIncoming] = useState<IncomingRequest | null>(cached?.incoming ?? null);
+  const [username, setUsername] = useState<string | null>(cached?.username ?? null);
+  const [loaded, setLoaded] = useState(cached !== null);
+  const [refreshing, setRefreshing] = useState(false);
+  const inFlight = useRef(false);
+
+  const refresh = useCallback(async () => {
+    // Skip if a pass is already running (poll tick + focus + foreground
+    // can land close together).
+    if (inFlight.current) return;
+    inFlight.current = true;
+    try {
+      const localUsername = await getLocalUsername();
+
+      // Best-effort pull of anything a known contact requested from
+      // this device's claimed username while the app wasn't open —
+      // folds straight into the same local tracking a tapped link
+      // already uses, so loadIncoming() below picks it up either way.
+      if (localUsername && session) {
+        await syncIncomingRequests(localUsername, session.publicKey.toBase58());
+      }
+
+      const [all, inc] = await Promise.all([
+        loadActivity(connection),
+        loadIncoming(connection),
+      ]);
+      if (session) {
+        homeCache = {
+          address: session.publicKey.toBase58(),
+          items: all,
+          incoming: inc,
+          username: localUsername,
+        };
+      }
+      setUsername(localUsername);
+      setItems(all);
+      setIncoming(inc);
+      setLoaded(true);
+    } catch {
+      // Keep whatever's on screen; the next pass will retry.
+    } finally {
+      inFlight.current = false;
+    }
+  }, [connection, session]);
 
   useFocusEffect(
     useCallback(() => {
-      let cancelled = false;
-      (async () => {
-        const localUsername = await getLocalUsername();
-        if (cancelled) return;
-        setUsername(localUsername);
-
-        // Best-effort pull of anything a known contact requested from
-        // this device's claimed username while the app wasn't open —
-        // folds straight into the same local tracking a tapped link
-        // already uses, so loadIncoming() below picks it up either way.
-        if (localUsername && session) {
-          await syncIncomingRequests(localUsername, session.publicKey.toBase58());
-        }
-        if (cancelled) return;
-
-        loadActivity(connection).then((all) => {
-          if (!cancelled) setItems(all);
-        });
-        loadIncoming(connection).then((inc) => {
-          if (!cancelled) setIncoming(inc);
-        });
-      })();
+      refresh();
+      // Re-check on an interval while Home is on screen...
+      const timer = setInterval(refresh, POLL_MS);
+      // ...and whenever the app comes back from the background (e.g. after
+      // switching to the wallet, or the phone was locked).
+      const sub = AppState.addEventListener('change', (state) => {
+        if (state === 'active') refresh();
+      });
       return () => {
-        cancelled = true;
+        clearInterval(timer);
+        sub.remove();
       };
-    }, [connection, session]),
+    }, [refresh]),
   );
+
+  async function onPullRefresh() {
+    setRefreshing(true);
+    await refresh();
+    setRefreshing(false);
+  }
 
   // Summed as a single number regardless of each item's own token — mixing
   // USDC and SOL amounts isn't really "one currency," but USDC is this
@@ -77,7 +130,17 @@ export default function HomeScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={s.safeArea} edges={['top', 'bottom']}>
-    <ScrollView style={s.root} contentContainerStyle={s.content}>
+    <ScrollView
+      style={s.root}
+      contentContainerStyle={s.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onPullRefresh}
+          tintColor={color.textDim}
+        />
+      }
+    >
       <View style={s.headerRow}>
         <View style={s.brandRow}>
           <View style={s.miniMark}>
@@ -164,7 +227,13 @@ export default function HomeScreen({ navigation }: any) {
         </Pressable>
       ) : null}
 
-      {items.length === 0 ? (
+      {!loaded ? (
+        <View style={s.list}>
+          <Text style={s.listLabel}>ACTIVITY</Text>
+          <View style={s.skeletonRow} />
+          <View style={s.skeletonRow} />
+        </View>
+      ) : items.length === 0 ? (
         <View style={s.empty}>
           <View style={s.emptyIcon} />
           <Text style={s.emptyTitle}>No activity yet</Text>
@@ -209,6 +278,15 @@ const s = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: color.bg },
   root: { flex: 1, backgroundColor: color.bg },
   content: { padding: space.xl, paddingBottom: space.xxl, gap: space.md + 2 },
+
+  skeletonRow: {
+    height: 64,
+    borderRadius: radius.lg,
+    backgroundColor: color.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: color.border,
+    opacity: 0.6,
+  },
 
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm + 2 },

@@ -10,8 +10,8 @@ Built for CLOCK IN (Solana Mobile hackathon), Android only.
 
 Kivo generates payment requests and resolves usernames. It never creates a
 seed phrase, stores a key, or signs anything itself. Every signature is
-delegated to an installed wallet over Mobile Wallet Adapter. If Phantom is
-the bank account, Kivo is Venmo.
+delegated to an installed wallet over Mobile Wallet Adapter. Your wallet holds
+the money. Kivo gets it moving.
 
 ## Setup
 

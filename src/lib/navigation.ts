@@ -26,8 +26,14 @@ export type RootStackParamList = {
   // same screen instance (React Navigation merges params into the
   // existing route rather than pushing a new one) — the standard pattern
   // for "returning a value" from a pushed screen.
-  New: { mode?: 'request' | 'pay' | 'split'; selectedRecipient?: PickedRecipient } | undefined;
-  Picker: { mode: 'pay' | 'request' };
+  New:
+    | {
+        mode?: 'request' | 'pay' | 'split';
+        selectedRecipient?: PickedRecipient;
+        addSplitPerson?: PickedRecipient;
+      }
+    | undefined;
+  Picker: { mode: 'pay' | 'request'; forSplit?: boolean };
   Scan: { mode: 'pay' | 'request' };
   ShareRequest: { link: string; requestedFromLabel?: string; deliveredTo?: string };
   PaymentReceipt: {

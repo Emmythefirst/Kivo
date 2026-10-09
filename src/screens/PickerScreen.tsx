@@ -65,8 +65,12 @@ export default function PickerScreen({ navigation, route }: any) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trimmed, queryIsAddress, connection]);
 
+  // Split mode adds one named person to the bill at a time instead of
+  // replacing the single recipient.
+  const forSplit = !!route.params?.forSplit;
+
   function pick(p: { address: string; username?: string }) {
-    navigation.navigate('New', { selectedRecipient: p });
+    navigation.navigate('New', forSplit ? { addSplitPerson: p } : { selectedRecipient: p });
   }
 
   return (
@@ -75,7 +79,9 @@ export default function PickerScreen({ navigation, route }: any) {
         <Pressable style={s.backBtn} onPress={() => navigation.goBack()}>
           <Text style={s.backBtnText}>‹</Text>
         </Pressable>
-        <Text style={s.title}>{mode === 'pay' ? 'Pay to' : 'Request from'}</Text>
+        <Text style={s.title}>
+          {forSplit ? 'Add to split' : mode === 'pay' ? 'Pay to' : 'Request from'}
+        </Text>
       </View>
 
       <View style={s.searchRow}>
@@ -89,9 +95,11 @@ export default function PickerScreen({ navigation, route }: any) {
           autoCorrect={false}
           autoFocus
         />
-        <Pressable style={s.qrBtn} onPress={() => navigation.navigate('Scan', { mode })}>
-          <Text style={s.qrBtnText}>QR</Text>
-        </Pressable>
+        {forSplit ? null : (
+          <Pressable style={s.qrBtn} onPress={() => navigation.navigate('Scan', { mode })}>
+            <Text style={s.qrBtnText}>QR</Text>
+          </Pressable>
+        )}
       </View>
 
       <ScrollView

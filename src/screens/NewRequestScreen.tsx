@@ -75,6 +75,31 @@ export default function NewRequestScreen({ navigation, route }: any) {
   // handleSubmit).
   const [deliverable, setDeliverable] = useState(false);
   const [sending, setSending] = useState(false);
+  // Split mode: people you've named for a share. Anyone beyond these (up
+  // to peopleCount - 1) is an anonymous link share, as before.
+  const [splitPeople, setSplitPeople] = useState<PickedRecipient[]>([]);
+  const [contactAddrs, setContactAddrs] = useState<string[]>([]);
+
+  useEffect(() => {
+    getRecentContacts().then((cs) => setContactAddrs(cs.map((c) => c.address)));
+  }, [splitPeople]);
+
+  // Same safeguard as single requests: straight-to-Home delivery only for
+  // a username you've paid before.
+  const canDeliver = useCallback(
+    (p: PickedRecipient) => !!p.username && contactAddrs.includes(p.address),
+    [contactAddrs],
+  );
+
+  useEffect(() => {
+    const added = route.params?.addSplitPerson;
+    if (added) {
+      setSplitPeople((prev) =>
+        prev.some((p) => p.address === added.address) ? prev : [...prev, added],
+      );
+      navigation.setParams({ addSplitPerson: undefined });
+    }
+  }, [route.params?.addSplitPerson, navigation]);
 
   useEffect(() => {
     let cancelled = false;
@@ -146,6 +171,7 @@ export default function NewRequestScreen({ navigation, route }: any) {
     setRecipient(null);
     setMemo('');
     setPeopleCount(3);
+    setSplitPeople([]);
     setTokenMenuOpen(false);
     setPayStatus('idle');
     setPayError(null);
@@ -160,7 +186,9 @@ export default function NewRequestScreen({ navigation, route }: any) {
       const trimmedMemo = memo.trim() || undefined;
       const localUsername = (await getLocalUsername()) ?? undefined;
 
+      setSending(true);
       for (let i = 0; i < peopleCount - 1; i++) {
+        const person = splitPeople[i];
         const req = createRequest({
           to: session!.publicKey,
           toUsername: localUsername,
@@ -169,8 +197,29 @@ export default function NewRequestScreen({ navigation, route }: any) {
           memo: trimmedMemo,
           billId,
         });
-        await addSentRequest({ request: req, requestedFromLabel: undefined });
+        const label = person
+          ? person.username
+            ? `@${person.username}`
+            : `${person.address.slice(0, 4)}…${person.address.slice(-4)}`
+          : undefined;
+        // Per-person fallback: if delivery fails, that share simply stays
+        // a link and the bill screen shows it that way.
+        let delivered = false;
+        if (person && canDeliver(person)) {
+          delivered = await pushPendingRequest({
+            id: req.id,
+            username: person.username!,
+            link: encodeLink(req),
+            fromLabel: localUsername ? `@${localUsername}` : undefined,
+            amount: share,
+            token,
+            memo: trimmedMemo,
+            createdAt: req.createdAt,
+          });
+        }
+        await addSentRequest({ request: req, requestedFromLabel: label, delivered });
       }
+      setSending(false);
       await saveBillMeta(billId, {
         total: amountNum,
         creatorShare,
@@ -284,7 +333,9 @@ export default function NewRequestScreen({ navigation, route }: any) {
         : `Pay ${formatAmount(amountNum, token)}`;
   } else if (isSplit) {
     ctaLabel = amountValid
-      ? `Split ${formatAmount(amountNum, token)} · ${peopleCount} people`
+      ? sending
+        ? 'Sending…'
+        : `Split ${formatAmount(amountNum, token)} · ${peopleCount} people`
       : 'Enter the bill total';
   } else {
     ctaLabel = !amountValid
@@ -447,6 +498,7 @@ export default function NewRequestScreen({ navigation, route }: any) {
                   </Pressable>
                 </View>
               ) : (
+                <>
                 <View style={s.splitRow}>
                   <View>
                     <Text style={s.splitTitle}>Split between</Text>
@@ -458,7 +510,12 @@ export default function NewRequestScreen({ navigation, route }: any) {
                   <View style={s.stepper}>
                     <Pressable
                       style={s.stepperBtn}
-                      onPress={() => setPeopleCount((p) => Math.max(2, p - 1))}
+                      onPress={() => {
+                        const next = Math.max(2, peopleCount - 1);
+                        setPeopleCount(next);
+                        // You're one of the people — only next - 1 others can be named.
+                        setSplitPeople((prev) => prev.slice(0, next - 1));
+                      }}
                     >
                       <Text style={s.stepperBtnText}>−</Text>
                     </Pressable>
@@ -471,6 +528,52 @@ export default function NewRequestScreen({ navigation, route }: any) {
                     </Pressable>
                   </View>
                 </View>
+
+                {splitPeople.map((p) => (
+                  <View key={p.address} style={s.splitPerson}>
+                    <Avatar name={p.username ?? p.address} colorSeed={p.username ?? p.address} size={30} />
+                    <View style={s.recipientMain}>
+                      <Text style={s.recipientTitle} numberOfLines={1}>
+                        {p.username ? `@${p.username}` : `${p.address.slice(0, 4)}…${p.address.slice(-4)}`}
+                      </Text>
+                      <Text style={s.recipientSub}>
+                        {canDeliver(p) ? 'Goes straight to their Home' : 'Link to share'}
+                      </Text>
+                    </View>
+                    <Pressable
+                      style={s.clearBtn}
+                      onPress={() =>
+                        setSplitPeople((prev) => prev.filter((x) => x.address !== p.address))
+                      }
+                    >
+                      <Text style={s.clearBtnText}>×</Text>
+                    </Pressable>
+                  </View>
+                ))}
+
+                {splitPeople.length < peopleCount - 1 ? (
+                  <Pressable
+                    style={s.addPersonBtn}
+                    onPress={() => navigation.navigate('Picker', { mode: 'request', forSplit: true })}
+                  >
+                    <Text style={s.addPersonText}>+ Add someone</Text>
+                  </Pressable>
+                ) : null}
+
+                {splitPeople.length > 0 ? (
+                  <Text style={s.splitSummary}>
+                    {(() => {
+                      const direct = splitPeople.filter(canDeliver).length;
+                      const links = peopleCount - 1 - direct;
+                      const linkText = `${links} link${links === 1 ? '' : 's'} to share`;
+                      if (direct === 0) return linkText;
+                      const directText = `${direct} direct request${direct === 1 ? '' : 's'}`;
+                      if (links === 0) return directText;
+                      return `${directText} · ${linkText}`;
+                    })()}
+                  </Text>
+                ) : null}
+                </>
               )}
 
               <View style={s.memoRow}>
@@ -695,6 +798,29 @@ const s = StyleSheet.create({
   splitTitle: { ...type.label, fontSize: 13.5, color: color.text },
   splitPreview: { ...type.caption, color: color.textFainter, marginTop: 2 },
   stepper: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  splitPerson: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    backgroundColor: color.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: color.borderStrong,
+    borderRadius: radius.lg,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+    marginTop: space.sm,
+  },
+  addPersonBtn: {
+    marginTop: space.sm,
+    paddingVertical: space.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: color.borderStrong,
+    alignItems: 'center',
+  },
+  addPersonText: { ...type.label, fontSize: 13.5, color: color.textDim },
+  splitSummary: { ...type.caption, color: color.textFainter, marginTop: space.sm, textAlign: 'center' },
   stepperBtn: {
     width: 32,
     height: 32,

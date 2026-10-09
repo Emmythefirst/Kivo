@@ -41,7 +41,7 @@ export default function ConnectScreen() {
           <Text style={s.ctaText}>Connect wallet</Text>
         </Pressable>
 
-        <Text style={s.fine}>If Phantom is your bank account,{'\n'}Kivo is Venmo.</Text>
+        <Text style={s.fine}>Your wallet holds the money.{'\n'}Kivo gets it moving.</Text>
       </View>
 
       {connecting ? (

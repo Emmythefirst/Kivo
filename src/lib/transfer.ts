@@ -18,6 +18,18 @@ export const USDC_MINT = new PublicKey(
 );
 export const USDC_DECIMALS = 6;
 
+/**
+ * Thrown before the wallet ever opens when the payer can't cover a USDC
+ * payment — so the user sees a plain reason instead of the wallet's
+ * opaque "Simulation failed" screen.
+ */
+export class UsdcBalanceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UsdcBalanceError';
+  }
+}
+
 export function buildSolTransfer(
   from: PublicKey,
   to: PublicKey,
@@ -45,6 +57,22 @@ export async function buildUsdcTransfer(
 ): Promise<Transaction> {
   const fromAta = await getAssociatedTokenAddress(USDC_MINT, from);
   const toAta = await getAssociatedTokenAddress(USDC_MINT, to);
+
+  // Fail early and clearly if the payer doesn't hold enough of THIS USDC
+  // (the devnet mint above). USDC from other faucets uses a different
+  // mint and won't count.
+  let have = 0;
+  try {
+    have = Number((await connection.getTokenAccountBalance(fromAta)).value.uiAmount ?? 0);
+  } catch {
+    have = 0; // no token account for this mint yet
+  }
+  if (have < amount) {
+    throw new UsdcBalanceError(
+      `You need ${amount} USDC but this wallet has ${have} of Kivo's devnet USDC. ` +
+        `Get some at faucet.circle.com (Solana, Devnet) and try again.`,
+    );
+  }
 
   const tx = new Transaction();
 

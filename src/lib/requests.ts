@@ -9,7 +9,7 @@ import { REGISTRY_PROGRAM_ID } from './usernames';
 // "kivo.app" name, which nobody owns. App Links verification checks
 // assetlinks.json at whatever host is declared here, so this must be a
 // domain that's actually reachable, not just a nice-looking placeholder.
-export const LINK_HOST = 'https://web-rouge-one-97.vercel.app';
+export const LINK_HOST = 'https://www.kivo.boats';
 export const REQUEST_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type PaymentRequest = {

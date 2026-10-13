@@ -120,7 +120,9 @@ export default function RequestScreen({ route, navigation }: Props) {
       setStatus('failed');
       const raw = e?.message ?? String(e);
       setMessage(
-        /insufficient/i.test(raw)
+        e?.name === 'UsdcBalanceError'
+          ? raw
+          : /insufficient/i.test(raw)
           ? 'Not enough balance to cover this and the network fee.'
           : /RequestExpired|This request has expired/i.test(raw)
             ? 'This request expired. Ask for a new one.'

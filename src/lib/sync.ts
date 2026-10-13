@@ -3,7 +3,7 @@ import { recordReceivedRequest } from './localStore';
 
 // Same deployment as the web fallback page — one Vercel project serving
 // both the static page and this one small API route.
-const API_BASE = 'https://web-rouge-one-97.vercel.app';
+const API_BASE = 'https://www.kivo.boats';
 
 type PendingEntry = {
   link: string;

@@ -7,8 +7,8 @@ import { toUint8Array } from 'js-base64';
 // it renders inside Phantom/Solflare's own UI, not ours.
 const APP_IDENTITY = {
   name: 'Kivo',
-  uri: 'https://web-rouge-one-97.vercel.app',
-  icon: 'favicon.ico', // resolved relative to uri
+  uri: 'https://www.kivo.boats',
+  icon: 'icon-192.png', // resolved relative to uri (PNG — wallets render it more reliably than .ico)
 };
 
 const CHAIN = 'solana:devnet'; // switch to solana:mainnet-beta for release

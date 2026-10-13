@@ -332,7 +332,9 @@ export default function NewRequestScreen({ navigation, route }: any) {
       setPayStatus('failed');
       const raw = e?.message ?? String(e);
       setPayError(
-        /insufficient/i.test(raw)
+        e?.name === 'UsdcBalanceError'
+          ? raw
+          : /insufficient/i.test(raw)
           ? 'Not enough balance to cover this and the network fee.'
           : `The wallet rejected or cancelled this. Nothing was sent.\n\n(${raw})`,
       );
